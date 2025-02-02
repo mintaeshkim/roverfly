@@ -1,0 +1,153 @@
+<mujoco model="quadrotor_payload">
+    <include file="empty_world_center.xml"/>
+    <compiler angle="degree" inertiafromgeom="true" coordinate="local"/>
+    <option timestep="0.002" gravity="0 0 -9.81" density="1.225" viscosity="1.789e-5" integrator="RK4"/>
+    <default>
+        <joint armature="1" damping="1" limited="true"/>
+        <geom conaffinity="0" condim="3" density="5.0" friction="1 0.5 0.5" margin="0.01" rgba="0.8 0.6 0.4 1"/>
+    </default>
+
+    <worldbody>
+        <!-- First quadrotor -->
+        <body name="core_0" pos="-0.51 0 0.88">
+        <!-- <body name="core" pos="0 0 2" quat=".866 0 .5 0"> Enable to tilt -->
+            <geom name="core_geom_0" type="box" pos="0 0 0" quat="1 0 0 0" size=".05 .05 .02" rgba="0 0.15 0.47 1" mass="0.6"/>
+            <joint name="root_0" type="free" damping="0" armature="0" pos="0 0 0" limited="false"/>
+            <geom name="arm_front0_0" type="box" pos="0.1 0 0" size=".05 .005 .005" quat="1 0 0 0" rgba=".8 .8 .8 1" mass=".02"/>
+            <geom name="arm_back0_0" type="box" pos="-0.1 0 0" size=".05 .005 .005" quat="0 0 0 1" rgba=".8 .8 .8 1" mass=".02"/>
+            <geom name="arm_left0_0" type="box" pos="0 0.1 0" size=".05 .005 .005" quat=".707 0 0 .707" rgba=".8 .8 .8 1" mass=".02"/>
+            <geom name="arm_right0_0" type="box" pos="0 -0.1 0" size=".05 .005 .005" quat=".707 0 0 -.707" rgba=".8 .8 .8 1" mass=".02"/>
+    
+            <body name="arm_front1_0" pos=".15 0 0">
+                <geom type="box" pos=".01 0 .005" size=".01 .005 .01" quat="1 0 0 0" rgba=".8 .8 .8 1" mass=".01"/>
+                <body name="thruster0_0" pos="0.01 0 0.015">
+                    <geom type="cylinder" pos="0 0 .0025" size=".05 .0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" mass=".02"/>
+                    <site name="motor0_0" type="cylinder" pos="0 0 .0025" size=".01 .0025" quat="1 0 0 0" rgba=".8 .8 .8 1"/>
+                </body>
+            </body>
+
+            <body name="arm_back1_0" pos="-.15 0 0">
+                <geom type="box" pos="-.01 0 .005" size=".01 .005 .01" quat="0 0 0 1" rgba=".8 .8 .8 1" mass=".01"/>
+                <body name="thruster1_0" pos="-0.01 0 .015">
+                    <geom type="cylinder" pos="0 0 .0025" size=".05 .0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" mass=".02"/>
+                    <site name="motor1_0" type="cylinder" pos="0 0 .0025" size=".01 .0025" quat="1 0 0 0" rgba=".8 .8 .8 1"/>
+                </body>
+            </body>
+
+            <body name="arm_left1_0" pos="0 .15 0">
+                <geom type="box" pos="0 .01 .005" size=".01 .005 .01" quat=".7071068 0 0 .7071068" rgba=".8 .8 .8 1" mass=".01"/>
+                <body name="thruster2_0" pos="0 0.01 0.015">
+                    <geom type="cylinder" pos="0 0 .0025" size=".05 .0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" mass=".02"/>
+                    <site name="motor2_0" type="cylinder" pos="0 0 .0025" size=".01 0.0025" quat="1 0 0 0" rgba=".8 .8 .8 1"/>
+                </body>
+            </body>
+
+            <body name="arm_right1_0" pos="0 -.15 0">
+                <geom type="box" pos="0 -.01 .005" size=".01 .005 .01" quat=".7071068 0 0 -.7071068" rgba=".8 .8 .8 1" mass=".01"/>
+                <body name="thruster3_0" pos="0 -0.01 .015">
+                    <geom type="cylinder" pos="0 0 .0025" size=".05 .0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" mass=".02"/>
+                    <site name="motor3_0" type="cylinder" pos="0 0 .0025" size=".01 .0025" quat="1 0 0 0" rgba=".8 .8 .8 1"/>
+                </body>
+            </body>
+
+            <body name="hook_core_0" pos="0 0 -0.02">
+                <joint name="hook_core_joint_0" type="ball" pos="0 0 0" damping="0.1" armature="0.01"/>
+                <geom type="sphere" size="0.02" rgba=".8 .8 .8 1"/>
+                <site name="hook_core_site_0" pos="0 0 0" type="sphere" size="0.01" rgba=".8 .8 .8 1"/>
+            </body>
+
+            <site name="x_axis_0" type="box" pos=".1 .0 .0" size=".15 .005 .005" quat="1 0 0 0" rgba="1 0 0 0.2"/>
+            <site name="y_axis_0" type="box" pos=".0 .1 .0" size=".15 .005 .005" quat=".707 0 0 .707" rgba="0 1 0 0.2"/>
+            <site name="z_axis_0" type="box" pos=".0 .0 .1" size=".15 .005 .005" quat="-.707 0 .707 0" rgba="0 0 1 0.2"/>
+        </body>
+
+        <!-- Second quadrotor -->
+        <body name="core_1" pos="0.51 0 0.88">
+        <!-- <body name="core" pos="0 0 2" quat=".866 0 .5 0"> Enable to tilt -->
+            <geom name="core_geom_1" type="box" pos="0 0 0" quat="1 0 0 0" size=".05 .05 .02" rgba="0 0.15 0.47 1" mass="0.6"/>
+            <joint name="root_1" type="free" damping="0" armature="0" pos="0 0 0" limited="false"/>
+            <geom name="arm_front0_1" type="box" pos="0.1 0 0" size=".05 .005 .005" quat="1 0 0 0" rgba=".8 .8 .8 1" mass=".02"/>
+            <geom name="arm_back0_1" type="box" pos="-0.1 0 0" size=".05 .005 .005" quat="0 0 0 1" rgba=".8 .8 .8 1" mass=".02"/>
+            <geom name="arm_left0_1" type="box" pos="0 0.1 0" size=".05 .005 .005" quat=".707 0 0 .707" rgba=".8 .8 .8 1" mass=".02"/>
+            <geom name="arm_right0_1" type="box" pos="0 -0.1 0" size=".05 .005 .005" quat=".707 0 0 -.707" rgba=".8 .8 .8 1" mass=".02"/>
+    
+            <body name="arm_front1_1" pos=".15 0 0">
+                <geom type="box" pos=".01 0 .005" size=".01 .005 .01" quat="1 0 0 0" rgba=".8 .8 .8 1" mass=".01"/>
+                <body name="thruster0_1" pos="0.01 0 0.015">
+                    <geom type="cylinder" pos="0 0 .0025" size=".05 .0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" mass=".02"/>
+                    <site name="motor0_1" type="cylinder" pos="0 0 .0025" size=".01 .0025" quat="1 0 0 0" rgba=".8 .8 .8 1"/>
+                </body>
+            </body>
+
+            <body name="arm_back1_1" pos="-.15 0 0">
+                <geom type="box" pos="-.01 0 .005" size=".01 .005 .01" quat="0 0 0 1" rgba=".8 .8 .8 1" mass=".01"/>
+                <body name="thruster1_1" pos="-0.01 0 .015">
+                    <geom type="cylinder" pos="0 0 .0025" size=".05 .0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" mass=".02"/>
+                    <site name="motor1_1" type="cylinder" pos="0 0 .0025" size=".01 .0025" quat="1 0 0 0" rgba=".8 .8 .8 1"/>
+                </body>
+            </body>
+
+            <body name="arm_left1_1" pos="0 .15 0">
+                <geom type="box" pos="0 .01 .005" size=".01 .005 .01" quat=".7071068 0 0 .7071068" rgba=".8 .8 .8 1" mass=".01"/>
+                <body name="thruster2_1" pos="0 0.01 0.015">
+                    <geom type="cylinder" pos="0 0 .0025" size=".05 .0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" mass=".02"/>
+                    <site name="motor2_1" type="cylinder" pos="0 0 .0025" size=".01 0.0025" quat="1 0 0 0" rgba=".8 .8 .8 1"/>
+                </body>
+            </body>
+
+            <body name="arm_right1_1" pos="0 -.15 0">
+                <geom type="box" pos="0 -.01 .005" size=".01 .005 .01" quat=".7071068 0 0 -.7071068" rgba=".8 .8 .8 1" mass=".01"/>
+                <body name="thruster3_1" pos="0 -0.01 .015">
+                    <geom type="cylinder" pos="0 0 .0025" size=".05 .0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" mass=".02"/>
+                    <site name="motor3_1" type="cylinder" pos="0 0 .0025" size=".01 .0025" quat="1 0 0 0" rgba=".8 .8 .8 1"/>
+                </body>
+            </body>
+
+            <body name="hook_core_1" pos="0 0 -0.02">
+                <joint name="hook_core_joint_1" type="ball" pos="0 0 0" damping="0.1" armature="0.01"/>
+                <geom type="sphere" size="0.02" rgba=".8 .8 .8 1"/>
+                <site name="hook_core_site_1" pos="0 0 0" type="sphere" size="0.01" rgba=".8 .8 .8 1"/>
+            </body>
+
+            <site name="x_axis_1" type="box" pos=".1 .0 .0" size=".15 .005 .005" quat="1 0 0 0" rgba="1 0 0 0.2"/>
+            <site name="y_axis_1" type="box" pos=".0 .1 .0" size=".15 .005 .005" quat=".707 0 0 .707" rgba="0 1 0 0.2"/>
+            <site name="z_axis_1" type="box" pos=".0 .0 .1" size=".15 .005 .005" quat="-.707 0 .707 0" rgba="0 0 1 0.2"/>
+        </body>
+
+        <!-- Payload -->
+        <body name="payload" pos="0 0 0">
+            <joint name="payload_joint" type="free" damping="0" armature="0" pos="0 0 0" limited="false"/>
+            <geom type="sphere" size="0.05" rgba="1 0.02 0.54 1" mass="0.1"/>
+            <body name="hook_payload" pos="0 0 0">
+                <joint name="hook_payload_joint" type="ball" pos="0 0 0" range="0 0" damping="0.1" armature="0.01" limited="true"/>
+                <geom type="sphere" size="0.02" rgba=".8 .8 .8 1"/>
+                <site name="hook_payload_site" pos="0 0 0" type="sphere" size="0.01" rgba=".8 .8 .8 1"/>
+            </body>
+        </body>
+    </worldbody>
+
+    <!-- Tendons -->
+    <tendon>
+        <spatial range="0 1.0" limited="true" rgba="1 1 1 1" width=".005" stiffness="0">
+            <site site="hook_payload_site"/>
+            <site site="hook_core_site_0"/>
+        </spatial>
+        <spatial range="0 1.0" limited="true" rgba="1 1 1 1" width=".005" stiffness="0">
+            <site site="hook_payload_site"/>
+            <site site="hook_core_site_1"/>
+        </spatial>
+    </tendon>
+
+    <!-- Actuators -->
+    <actuator>
+        <motor name="Motor0_0" ctrllimited="true" ctrlrange="0 5" gear="0  0. 1. 0. 0. -0.025" site="motor0_0"/>
+        <motor name="Motor1_0" ctrllimited="true" ctrlrange="0 5" gear="0  0. 1. 0. 0. -0.025" site="motor1_0"/>
+        <motor name="Motor2_0" ctrllimited="true" ctrlrange="0 5" gear="0  0. 1. 0. 0.  0.025" site="motor2_0"/>
+        <motor name="Motor3_0" ctrllimited="true" ctrlrange="0 5" gear="0  0. 1. 0. 0.  0.025" site="motor3_0"/>
+
+        <motor name="Motor0_1" ctrllimited="true" ctrlrange="0 5" gear="0  0. 1. 0. 0. -0.025" site="motor0_1"/>
+        <motor name="Motor1_1" ctrllimited="true" ctrlrange="0 5" gear="0  0. 1. 0. 0. -0.025" site="motor1_1"/>
+        <motor name="Motor2_1" ctrllimited="true" ctrlrange="0 5" gear="0  0. 1. 0. 0.  0.025" site="motor2_1"/>
+        <motor name="Motor3_1" ctrllimited="true" ctrlrange="0 5" gear="0  0. 1. 0. 0.  0.025" site="motor3_1"/>
+    </actuator>
+</mujoco>

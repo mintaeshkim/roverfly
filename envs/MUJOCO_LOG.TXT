@@ -1,0 +1,6 @@
+Thu Jun  6 00:23:45 2024
+WARNING: mju_openResource: unknown file 'your_model_path.xml'
+
+Tue Sep  3 22:33:52 2024
+WARNING: mju_openResource: unknown file 'quadrotor.xml'
+
