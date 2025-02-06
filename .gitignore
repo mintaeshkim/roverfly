@@ -1,0 +1,3 @@
+./train/data
+./train/saved_models
+./train/logs
