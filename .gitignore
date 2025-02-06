@@ -1,4 +1,4 @@
-./train/data/
-./train/saved_models/
-./train/logs/
+train/data/
+train/saved_models/
+train/logs/
 **/__pycache__/
