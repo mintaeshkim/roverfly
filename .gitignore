@@ -2,3 +2,4 @@ train/data/
 train/saved_models/
 train/logs/
 **/__pycache__/
+**/.DS_Store
