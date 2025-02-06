@@ -94,7 +94,7 @@ def main():
     stop_callback = StopTrainingOnRewardThreshold(reward_threshold=59500, verbose=1)
     eval_callback = EvalCallbackWithTimestamp(env,
                                  callback_on_new_best=stop_callback,
-                                 eval_freq=10000,
+                                 eval_freq=5000,
                                  best_model_save_path=save_path,
                                  verbose=1)
     

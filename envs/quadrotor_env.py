@@ -137,9 +137,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.JQ = np.array([[0.49, 0, 0],
                             [0, 0.53, 0],
                             [0, 0, 0.98]]) * 1e-2
-        self.kPdφ, self.kPdθ, self.kPdψ = 1.0, 1.0, 0.5
-        self.kIdφ, self.kIdθ, self.kIdψ = 0.002, 0.002, 0.001
-        self.kDdφ, self.kDdθ, self.kDdψ = 0.002, 0.002, 0.001
+        self.kPdφ, self.kPdθ, self.kPdψ = 1.0, 1.0, 0.8
+        self.kIdφ, self.kIdθ, self.kIdψ = 0.0, 0.0, 0.0
+        self.kDdφ, self.kDdθ, self.kDdψ = 0.0, 0.0, 0.0
         
         self.clipI = 0.3
 
@@ -161,7 +161,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     @property
     def dt(self) -> float:
         return self.model.opt.timestep * self.frame_skip
-    
+  
     def _set_action_space(self):
         # CTBR
         low = np.array([-1, -1, -1, -1])
@@ -258,7 +258,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
             self.difficulty = self.stage * self.progress["setpoint"]
         if self.traj_type == 'curve':
-            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.dt,
+            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt,
                                            ax=np.random.choice([-1,1])*5*self.progress["curve"],
                                            ay=np.random.choice([-1,1])*5*self.progress["curve"],
                                            az=np.random.choice([-1,1])*5*self.progress["curve"],
@@ -298,6 +298,14 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         qpos = np.concatenate([xQ, attQ])
         qvel = np.concatenate([vQ, ωQ])
         self.set_state(qpos, qvel)
+
+        """ Randomize Inertia """
+        self.JQ = np.array([[0.49, 0, 0],
+                            [0, 0.53, 0],
+                            [0, 0, 0.98]]) * 1e-2
+        self.JQ = self.JQ @ np.array([[np.clip(np.random.normal(1, 1), 0.95, 1.05), 0, 0],
+                                      [0, np.clip(np.random.normal(1, 1), 0.95, 1.05), 0],
+                                      [0, 0, np.clip(np.random.normal(1, 1), 0.95, 1.05)]])
 
         self.action = np.zeros(self.n_action)
 
@@ -365,8 +373,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     def step(self, action, restore=False):
         # 1. Simulate for Single Time Step
         self.action = action
-        print()
-        print(np.round(self.action[1:], 2))
         for _ in range(self.num_sims_per_env_step):
             self.do_simulation(self.action, self.frame_skip)  # a_{t}
         if self.render_mode == "human": self.render()
@@ -400,9 +406,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.data.actuator("Motor3").ctrl[0] = ctrl[3]  # data.ctrl[4] # right
 
     def _ctbr2srt(self, action):
-        print(np.round(self.ω, 2))
-
-        zcmd = 10 * (action[0] + 1) / 2
+        zcmd = self.mQ * self.g * (action[0] + 1) / 2
         dφd = action[1]
         dθd = action[2]
         dψd = action[3]
