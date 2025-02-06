@@ -680,4 +680,5 @@ class TestRecord:
 
 if __name__ == "__main__":
     env = QuadrotorEnv()
-    env._ctbr2srt(np.zeros(4))
+    env.reset()
+    print(env._get_obs())
