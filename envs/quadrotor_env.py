@@ -485,7 +485,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         exQ = np.linalg.norm(self.exQ, ord=2)
         evQ = np.linalg.norm(self.evQ, ord=2)
         eψQ = np.abs(ψQ - ψQd)
-        eωQ = np.linalg.norm(np.array([1, 1, 0.5]) * self.ω, ord=1)
+        eωQ = np.linalg.norm(np.array([1, 1, 0.5]) * self.ω, ord=2)
 
         rewards = np.exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ])
                          *np.array([exQ, evQ, eψQ, eωQ]))
