@@ -435,8 +435,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         f = np.clip(f.flatten(), 0, 5)
 
         # region
-        # print("M: ", M)
-        # print("Md: ", np.round(Md, 2))
         # print("f: ", np.round(f, 2))
         # print("zcmd: ", np.round(zcmd, 2))
         # print("φcmd: ", np.round(φcmd, 2))
@@ -479,7 +477,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         scale_xQ = 1.0/0.5
         scale_vQ = 1.0/2.0
         scale_ψQ = 1.0/(np.pi/2)
-        scale_ωQ = 1.0/1.0
+        scale_ωQ = 1.0/0.25
 
         ψQd = 0
         ψQ  = quat2euler_raw(self.data.qpos[3:7])[2]
@@ -487,7 +485,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         exQ = np.linalg.norm(self.exQ, ord=2)
         evQ = np.linalg.norm(self.evQ, ord=2)
         eψQ = np.abs(ψQ - ψQd)
-        eωQ = np.linalg.norm(self.ω, ord=1)
+        eωQ = np.linalg.norm(np.array([1, 1, 0.5]) * self.ω, ord=1)
 
         rewards = np.exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ])
                          *np.array([exQ, evQ, eψQ, eωQ]))
