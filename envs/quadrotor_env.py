@@ -32,7 +32,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     def __init__(
         self,
         max_timesteps = 5000,  # 10 seconds
-        xml_file: str = "../assets/quadrotor_x_cfg.xml",
+        xml_file: str = "../assets/quadrotor_falcon.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
         reset_noise_scale: float = 1.0,
@@ -141,7 +141,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.kIdφ, self.kIdθ, self.kIdψ = 0.0, 0.0, 0.0
         self.kDdφ, self.kDdθ, self.kDdψ = 0.0, 0.0, 0.0
         
-        self.clipI = 0.3
+        self.clipI = 0.15
 
         self.edφI, self.edθI, self.edψI = 0, 0, 0
         self.edφP_prev, self.edθP_prev, self.edψP_prev = 0, 0, 0
@@ -154,6 +154,12 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                                          [-self.d, -self.d, self.d, self.d],
                                          [-self.κ, self.κ, -self.κ, self.κ]]))
         self.CR, self.wb, self.cT = 1148, -141.4, 1.105e-5
+
+        self.tau_up = 0.2164
+        self.tau_down = 0.1644
+        self.rotor_max_thrust = 14.981  # N
+        self.max_thrust = 30  # N
+        self.actual_forces = np.zeros(4)
         # endregion
 
         self.time = 0
@@ -308,6 +314,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                                       [0, 0, np.clip(np.random.normal(1, 1), 0.95, 1.05)]])
 
         self.action = np.zeros(self.n_action)
+        self.actual_forces = np.zeros(4)
 
         return self._get_obs()
 
@@ -396,8 +403,18 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self._step_mujoco_simulation(ctrl, n_frames)
 
     def _step_mujoco_simulation(self, ctrl, n_frames):
-        self._apply_control(ctrl=ctrl)
+        self._rotor_dynamics(ctrl)
+        self._apply_control(ctrl=self.actual_forces.reshape((4,1)))
         mj.mj_step(self.model, self.data, nstep=n_frames)
+
+    def _rotor_dynamics(self, ctrl):
+        # Rotor Dynamics
+        desired_forces = ctrl
+        tau = np.zeros(4)
+        for i in range(4):
+            tau[i] = self.tau_up if desired_forces[i] > self.actual_forces[i] else self.tau_down
+        alpha = self.sim_dt / (tau + self.sim_dt)
+        self.actual_forces = (1 - alpha) * self.actual_forces + alpha * desired_forces
 
     def _apply_control(self, ctrl):
         self.data.actuator("Motor0").ctrl[0] = ctrl[0]  # data.ctrl[1] # front
@@ -406,7 +423,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.data.actuator("Motor3").ctrl[0] = ctrl[3]  # data.ctrl[4] # right
 
     def _ctbr2srt(self, action):
-        zcmd = self.mQ * self.g * (action[0] + 1) / 2
+        zcmd = self.max_thrust * (action[0] + 1) / 2
         dφd = action[1]
         dθd = action[2]
         dψd = action[3]
@@ -432,7 +449,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # Original
         Mcmd = np.array([φcmd, θcmd, ψcmd])
         f = self.A @ np.concatenate([[zcmd], Mcmd]).reshape((4,1))
-        f = np.clip(f.flatten(), 0, 5)
+        f = np.clip(f.flatten(), 0, self.rotor_max_thrust)
 
         # region
         # print("f: ", np.round(f, 2))
