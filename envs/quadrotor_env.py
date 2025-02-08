@@ -155,6 +155,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                                          [-self.κ, self.κ, -self.κ, self.κ]]))
         self.CR, self.wb, self.cT = 1148, -141.4, 1.105e-5
 
+        # Rotor Dynamics
         self.tau_up = 0.2164
         self.tau_down = 0.1644
         self.rotor_max_thrust = 14.981  # N
@@ -408,7 +409,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         mj.mj_step(self.model, self.data, nstep=n_frames)
 
     def _rotor_dynamics(self, ctrl):
-        # Rotor Dynamics
         desired_forces = ctrl
         tau = np.zeros(4)
         for i in range(4):
@@ -432,19 +432,19 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.edφI = np.clip(self.edφI + self.edφP * self.sim_dt, -self.clipI, self.clipI)
         self.edφD = (self.edφP - self.edφP_prev) / self.sim_dt
         self.edφP_prev = self.edφP
-        φcmd = np.clip(self.kPdφ * self.edφP + self.kIdφ * self.edφI + self.kDdφ * self.edφD, -1, 1)
+        φcmd = np.clip(self.kPdφ * self.edφP + self.kIdφ * self.edφI + self.kDdφ * self.edφD, -2, 2)
 
         self.edθP = dθd - self.ω[1]
         self.edθI = np.clip(self.edθI + self.edθP * self.sim_dt, -self.clipI, self.clipI)
         self.edθD = (self.edθP - self.edθP_prev) / self.sim_dt
         self.edθP_prev = self.edθP
-        θcmd = np.clip(self.kPdθ * self.edθP + self.kIdθ * self.edθI + self.kDdθ * self.edθD, -1, 1)
+        θcmd = np.clip(self.kPdθ * self.edθP + self.kIdθ * self.edθI + self.kDdθ * self.edθD, -2, 2)
 
         self.edψP = dψd - self.ω[2]
         self.edψI = np.clip(self.edψI + self.edψP * self.sim_dt, -self.clipI, self.clipI)
         self.edψD = (self.edψP - self.edψP_prev) / self.sim_dt
         self.edψP_prev = self.edψP
-        ψcmd = np.clip(self.kPdψ * self.edψP + self.kIdψ * self.edψI + self.kDdψ * self.edψD, -1, 1)
+        ψcmd = np.clip(self.kPdψ * self.edψP + self.kIdψ * self.edψI + self.kDdψ * self.edψD, -2, 2)
 
         # Original
         Mcmd = np.array([φcmd, θcmd, ψcmd])
