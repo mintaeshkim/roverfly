@@ -94,7 +94,7 @@ def main():
     stop_callback = StopTrainingOnRewardThreshold(reward_threshold=59500, verbose=1)
     eval_callback = EvalCallbackWithTimestamp(env,
                                  callback_on_new_best=stop_callback,
-                                 eval_freq=5000,
+                                 eval_freq=2500,
                                  best_model_save_path=save_path,
                                  verbose=1)
     
@@ -103,7 +103,7 @@ def main():
     
     # Networks
     # NOTE: if is_history: use 128 or more
-    activation_fn = th.nn.Tanh
+    activation_fn = th.nn.SiLU  # th.nn.Tanh
     # net_arch = {'pi': [64,64,64],
     #             'vf': [64,64,64]}
     # net_arch = {'pi': [128,96,64],

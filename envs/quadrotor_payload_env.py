@@ -80,14 +80,14 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         ##################################################
         # region
         self.env_num            = env_num
+        self.n_state            = 18  # xQ, ΘQ, xP, vQ, ωQ, vP
         self.n_action           = 4
         self.n_observation      = 186
         self.history_len_short  = 5
         self.history_len_long   = 10
         self.history_len        = self.history_len_short
         self.future_len         = 3
-        self.s_len              = 18  # xQ, ΘQ, xP, vQ, ωQ, vP
-        self.s_buffer           = deque(np.zeros((self.history_len_long, self.s_len)), maxlen=self.history_len_long)
+        self.s_buffer           = deque(np.zeros((self.history_len_long, self.n_state)), maxlen=self.history_len_long)
         self.e_buffer           = deque(np.zeros((self.history_len, 12)), maxlen=self.history_len)
         self.a_buffer           = deque(np.zeros((self.history_len_long, 4)), maxlen=self.history_len_long)
         self.a_last             = np.zeros(self.n_action)
@@ -101,7 +101,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         
         if self.is_delayed:
             self.n_delay        = 3
-            self.s_record       = np.zeros((self.max_timesteps, self.s_len))
+            self.s_record       = np.zeros((self.max_timesteps, self.n_state))
             self.a_record       = np.zeros((self.max_timesteps, self.n_action))
         else:
             self.n_delay        = 0
@@ -449,8 +449,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         s_a_curr = np.concatenate([s_curr, a_curr], axis=0)  # 22x21
 
         beta = s_next @ np.linalg.pinv(s_a_curr)  # s_{k+1} = A s_{k} + B a_{k}
-        A = beta[:, :self.s_len]  # A: 18x18
-        B = beta[:, self.s_len:]  # B: 18x4
+        A = beta[:, :self.n_state]  # A: 18x18
+        B = beta[:, self.n_state:]  # B: 18x4
 
         s_predicted = s_next  # s_{t-3}
         for i in range(self.n_delay):

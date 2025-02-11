@@ -65,35 +65,35 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         #################### BOOLEANS ####################
         ##################################################
         # region
-        self.is_future_traj     = False
-        self.is_lpf_action      = False  # Low Pass Filter
-        self.is_visual          = False
-        self.is_launch_control  = False
         self.is_action_bound    = False
         self.is_rs_reward       = False  # Rich-Sutton Reward
         self.is_io_history      = False
+        self.is_delayed         = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
         ##################################################
         # region
-        self.env_num            = env_num
-        self.n_action           = 4
-        self.n_observation      = 90
-        self.history_len_short  = 5
-        self.history_len_long   = 10
-        self.history_len        = self.history_len_short
-        self.future_len         = 3
-        self.e_buffer           = deque(np.zeros((self.history_len, 6)), maxlen=self.history_len)
-        self.a_buffer           = deque(np.zeros((self.history_len, 4)), maxlen=self.history_len)
-        self.action_last        = np.zeros(self.n_action)
-        self.num_episode        = 0
-        self.history_epi        = {'setpoint': deque([0]*10, maxlen=10),
-                                   'curve': deque([0]*10, maxlen=10)}
-        self.progress           = {'setpoint': 1e-3,
-                                   'curve': 1e-3}
-        self.action_space       = self._set_action_space()
-        self.observation_space  = self._set_observation_space()
+        self.env_num           = env_num
+        self.n_state           = 18
+        self.n_action          = 4
+        self.n_observation     = 90
+        self.history_len_short = 5
+        self.history_len_long  = 10
+        self.history_len       = self.history_len_short
+        self.future_len        = 3
+        self.delay_len         = 3
+        self.s_buffer          = deque(np.zeros((self.delay_len, self.n_state)), maxlen=self.delay_len)  # [x, R, v, ω]
+        self.e_buffer          = deque(np.zeros((self.history_len, 6)), maxlen=self.history_len)  # [exQ, evQ]
+        self.a_buffer          = deque(np.zeros((self.history_len, self.n_action)), maxlen=self.history_len)
+        self.action_last       = np.zeros(self.n_action)
+        self.num_episode       = 0
+        self.history_epi       = {'setpoint': deque([0]*10, maxlen=10),
+                                  'curve': deque([0]*10, maxlen=10)}
+        self.progress          = {'setpoint': 1e-3,
+                                  'curve': 1e-3}
+        self.action_space      = self._set_action_space()
+        self.observation_space = self._set_observation_space()
         # endregion
         ##################################################
         ##################### BOUNDS #####################
@@ -138,8 +138,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                             [0, 0.53, 0],
                             [0, 0, 0.98]]) * 1e-2
         self.kPdφ, self.kPdθ, self.kPdψ = 1.0, 1.0, 0.8
-        self.kIdφ, self.kIdθ, self.kIdψ = 0.0, 0.0, 0.0
-        self.kDdφ, self.kDdθ, self.kDdψ = 0.0, 0.0, 0.0
+        self.kIdφ, self.kIdθ, self.kIdψ = 0.0, 0.0, 0.0  # 0.0001, 0.0001, 0.00008
+        self.kDdφ, self.kDdθ, self.kDdψ = 0.0, 0.0, 0.0  # 0.001, 0.001, 0.0008
         
         self.clipI = 0.15
 
@@ -158,9 +158,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # Rotor Dynamics
         self.tau_up = 0.2164
         self.tau_down = 0.1644
-        self.rotor_max_thrust = 14.981  # N
+        self.rotor_max_thrust = 7.5  # 14.981  # N
         self.max_thrust = 30  # N
-        self.actual_forces = np.zeros(4)
+        self.actual_forces = (self.mQ * self.g / 4) * np.ones(4) 
         # endregion
 
         self.time = 0
@@ -203,9 +203,11 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         )
 
     def _init_history_ff(self):
+        s_curr = self._get_state_curr()
         obs_curr = self._get_obs_curr()
         e_curr = obs_curr[0:6]
         a_curr = obs_curr[18:]
+        [self.s_buffer.append(s_curr) for _ in range(self.delay_len)]
         [self.e_buffer.append(e_curr) for _ in range(self.history_len)]
         [self.a_buffer.append(a_curr) for _ in range(self.history_len)]
 
@@ -315,7 +317,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                                       [0, 0, np.clip(np.random.normal(1, 1), 0.95, 1.05)]])
 
         self.action = np.zeros(self.n_action)
-        self.actual_forces = np.zeros(4)
+        self.actual_forces = (self.mQ * self.g / 4) * np.ones(4)
 
         return self._get_obs()
 
@@ -327,6 +329,13 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.edφP_prev = 0
         self.edθP_prev = 0
         self.edψP_prev = 0
+
+    def _get_state_curr(self):
+        self.xQ_curr = self.data.qpos[0:3]
+        self.R_curr = quat2rot(self.data.qpos[3:7]).flatten()
+        self.vQ_curr = self.data.qvel[0:3]
+        self.ω_curr = self.data.qvel[3:6]
+        return np.concatenate([self.xQ_curr, self.R_curr, self.vQ_curr, self.ω_curr])
 
     def _get_obs(self):
         # Present
@@ -385,7 +394,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             self.do_simulation(self.action, self.frame_skip)  # a_{t}
         if self.render_mode == "human": self.render()
         # 2. Get Observation
-        obs_full = self._get_obs()
+        obs_full = self._get_obs()  # s_{t+1}
         # 3. Get Reward
         reward, reward_dict = self._get_reward()
         self.info["reward_dict"] = reward_dict
@@ -424,9 +433,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
     def _ctbr2srt(self, action):
         zcmd = self.max_thrust * (action[0] + 1) / 2
-        dφd = action[1]
-        dθd = action[2]
-        dψd = action[3]
+        dφd = action[1] / 2
+        dθd = action[2] / 2
+        dψd = action[3] / 2
 
         self.edφP = dφd - self.ω[0]
         self.edφI = np.clip(self.edφI + self.edφP * self.sim_dt, -self.clipI, self.clipI)
@@ -452,14 +461,14 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         f = np.clip(f.flatten(), 0, self.rotor_max_thrust)
 
         # region
-        # print("f: ", np.round(f, 2))
-        # print("zcmd: ", np.round(zcmd, 2))
-        # print("φcmd: ", np.round(φcmd, 2))
-        # print("θcmd: ", np.round(θcmd, 2))
-        # print("ψcmd: ", np.round(ψcmd, 2))
-        # print("P: ", np.round(self.kPdφ * self.edφP, 2))
-        # print("I: ", np.round(self.kIdφ * self.edφI, 2))
-        # print("D: ", np.round(self.kDdφ * self.edφD, 2))
+        # print("f: ", np.round(f, 3))
+        # print("zcmd: ", np.round(zcmd, 3))
+        # print("φcmd: ", np.round(φcmd, 3))
+        # print("θcmd: ", np.round(θcmd, 3))
+        # print("ψcmd: ", np.round(ψcmd, 3))
+        # print("P: ", np.round(self.kPdφ * self.edφP, 3))
+        # print("I: ", np.round(self.kIdφ * self.edφI, 3))
+        # print("D: ", np.round(self.kDdφ * self.edφD, 3))
         # endregion
 
         return f
@@ -487,14 +496,16 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         w_vQ = 0.5
         w_ψQ = 1.0
         w_ωQ = 0.5
+        w_Δa = 0.2
 
-        reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ])
+        reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
         weights = reward_weights / np.sum(reward_weights)
 
         scale_xQ = 1.0/0.5
         scale_vQ = 1.0/2.0
         scale_ψQ = 1.0/(np.pi/2)
         scale_ωQ = 1.0/0.25
+        scale_Δa = 1.0/4.0
 
         ψQd = 0
         ψQ  = quat2euler_raw(self.data.qpos[3:7])[2]
@@ -502,10 +513,11 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         exQ = np.linalg.norm(self.exQ, ord=2)
         evQ = np.linalg.norm(self.evQ, ord=2)
         eψQ = np.abs(ψQ - ψQd)
-        eωQ = np.linalg.norm(np.array([1, 1, 0.5]) * self.ω, ord=2)
+        eωQ = np.linalg.norm(self.ω, ord=2)
+        eΔa = np.linalg.norm(self.action - self.action_last)
 
-        rewards = np.exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ])
-                         *np.array([exQ, evQ, eψQ, eωQ]))
+        rewards = np.exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa])
+                         *np.array([exQ, evQ, eψQ, eωQ, eΔa]))
         reward_dict = dict(zip(names, weights * rewards))
         
         if self.traj_type == "setpoint":
