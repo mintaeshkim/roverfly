@@ -356,14 +356,15 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         return obs_full
 
     def _get_obs_curr(self):
-        self.xQ = self.data.qpos[0:3]
-        self.vQ = self.data.qvel[0:3]
+        self.xQ = self.data.qpos[0:3] + np.clip(np.random.normal(loc=0, scale=0.05, size=3), -0.05, 0.05)
+        self.vQ = self.data.qvel[0:3] + np.clip(np.random.normal(loc=0, scale=0.1, size=3), -0.1, 0.1)
         
         self.exQ = self.xQ - self.xQd[self.timestep]
         self.evQ = self.vQ - self.vQd[self.timestep]
         
-        self.R = quat2rot(self.data.qpos[3:7])  # Quadrotor
-        self.ω = self.data.qvel[3:6]  # Quadrotor
+        self.R = euler2rot(quat2euler_raw(self.data.qpos[3:7])
+                           +np.clip(self.np_random.normal(loc=0, scale=np.pi/36, size=3), -np.pi/36, np.pi/36))
+        self.ω = self.data.qvel[3:6] + np.clip(self.np_random.normal(loc=0, scale=np.pi/18, size=3), -np.pi/18, np.pi/18)
 
         self.e_curr = np.concatenate([self.R.T @ self.exQ, self.R.T @ self.evQ])
 
