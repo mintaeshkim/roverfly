@@ -41,6 +41,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     ):
         self.model = mj.MjModel.from_xml_path(xml_file)
         self.data = mj.MjData(self.model)
+        self.body_id = self.model.body(name="quadrotor").id
         self.frame_skip = frame_skip
         
         ##################################################
@@ -68,7 +69,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.is_action_bound    = False
         self.is_rs_reward       = False  # Rich-Sutton Reward
         self.is_io_history      = False
-        self.is_delayed         = True
+        self.is_delayed         = False
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -77,12 +78,12 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.env_num           = env_num
         self.n_state           = 18
         self.n_action          = 4
-        self.n_observation     = 90
         self.history_len_short = 5
         self.history_len_long  = 10
         self.history_len       = self.history_len_short
         self.future_len        = 3
         self.delay_len         = 3
+        self.n_observation     = self.n_state + self.n_action + 10 * (self.history_len) + 6 * self.future_len
         self.s_buffer          = deque(np.zeros((self.delay_len, self.n_state)), maxlen=self.delay_len)  # [x, R, v, ω]
         self.e_buffer          = deque(np.zeros((self.history_len, 6)), maxlen=self.history_len)  # [exQ, evQ]
         self.a_buffer          = deque(np.zeros((self.history_len, self.n_action)), maxlen=self.history_len)
@@ -288,8 +289,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.goal_pos = self.xQd[-1]
 
         """ Initial Perturbation """
-        # region
-        # No perturbation in attitude, velocity, and angular velocity
         # self.perturbation = 1e-5
         self.perturbation = self.progress["curve"]
 
@@ -302,19 +301,18 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         attQ = euler2quat_raw(quat2euler_raw(self.init_qpos[3:7]) + self.np_random.uniform(size=3, low=-watt, high=watt))
         vQ = self.vQd[0] + self.np_random.uniform(size=3, low=-wv, high=wv)
         ωQ = self.init_qvel[3:6] + self.np_random.uniform(size=3, low=-wω, high=wω)
-        # endregion
         
         qpos = np.concatenate([xQ, attQ])
         qvel = np.concatenate([vQ, ωQ])
         self.set_state(qpos, qvel)
 
-        """ Randomize Inertia """
-        self.JQ = np.array([[0.49, 0, 0],
-                            [0, 0.53, 0],
-                            [0, 0, 0.98]]) * 1e-2
-        self.JQ = self.JQ @ np.array([[np.clip(np.random.normal(1, 1), 0.95, 1.05), 0, 0],
-                                      [0, np.clip(np.random.normal(1, 1), 0.95, 1.05), 0],
-                                      [0, 0, np.clip(np.random.normal(1, 1), 0.95, 1.05)]])
+        """ Randomize the zeroth and the 2nd moments """
+        mQ = self.mQ * np.clip(np.random.normal(1, 1), 0.95, 1.05)
+        JQ = self.JQ @ np.array([[np.clip(np.random.normal(1, 1), 0.95, 1.05), 0, 0],
+                                 [0, np.clip(np.random.normal(1, 1), 0.95, 1.05), 0],
+                                 [0, 0, np.clip(np.random.normal(1, 1), 0.95, 1.05)]])
+        self.model.body_mass[self.body_id] = mQ
+        self.model.body_inertia[self.body_id] = np.diag(JQ)
 
         self.action = np.zeros(self.n_action)
         self.actual_forces = (self.mQ * self.g / 4) * np.ones(4)
@@ -356,14 +354,14 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         return obs_full
 
     def _get_obs_curr(self):
-        self.xQ = self.data.qpos[0:3] + np.clip(np.random.normal(loc=0, scale=0.05, size=3), -0.05, 0.05)
-        self.vQ = self.data.qvel[0:3] + np.clip(np.random.normal(loc=0, scale=0.1, size=3), -0.1, 0.1)
+        self.xQ = self.data.qpos[0:3] + np.clip(np.random.normal(loc=0, scale=0.025, size=3), -0.025, 0.025)
+        self.vQ = self.data.qvel[0:3] + np.clip(np.random.normal(loc=0, scale=0.1, size=3), -0.05, 0.05)
         
         self.exQ = self.xQ - self.xQd[self.timestep]
         self.evQ = self.vQ - self.vQd[self.timestep]
         
         self.R = euler2rot(quat2euler_raw(self.data.qpos[3:7])
-                           +np.clip(self.np_random.normal(loc=0, scale=np.pi/36, size=3), -np.pi/36, np.pi/36))
+                           + np.clip(self.np_random.normal(loc=0, scale=np.pi/36, size=3), -np.pi/36, np.pi/36))
         self.ω = self.data.qvel[3:6] + np.clip(self.np_random.normal(loc=0, scale=np.pi/18, size=3), -np.pi/18, np.pi/18)
 
         self.e_curr = np.concatenate([self.R.T @ self.exQ, self.R.T @ self.evQ])
