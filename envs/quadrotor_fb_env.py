@@ -31,7 +31,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     
     def __init__(
         self,
-        max_timesteps = 10000,  # 20 seconds
+        max_timesteps = 5000,  # 10 seconds
         xml_file: str = "../assets/quadrotor_falcon.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
@@ -68,7 +68,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # region
         self.is_action_bound    = False
         self.is_rs_reward       = False  # Rich-Sutton Reward
-        self.is_io_history      = True
+        self.is_io_history      = False
         self.is_delayed         = False
         # endregion
         ##################################################
@@ -83,9 +83,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.history_len       = self.history_len_short
         self.future_len        = 3
         self.delay_len         = 3
-        self.o_dim             = 234
-        self.s_buffer          = deque(np.zeros((self.history_len, self.s_dim)), maxlen=self.history_len)  # [x, R, v, ω]
-        self.d_buffer          = deque(np.zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
+        self.o_dim             = self.s_dim + self.a_dim + 10 * (self.history_len) + 6 * self.future_len
+        self.s_buffer          = deque(np.zeros((self.delay_len, self.s_dim)), maxlen=self.delay_len)  # [x, R, v, ω]
         self.e_buffer          = deque(np.zeros((self.history_len, 6)), maxlen=self.history_len)  # [exQ, evQ]
         self.a_buffer          = deque(np.zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
         self.action_last       = np.zeros(self.a_dim)
@@ -101,8 +100,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         ##################### BOUNDS #####################
         ##################################################
         # region
-        self.pos_bound = 3.0
-        self.vel_bound = 5.0
         self.pos_err_bound = 0.5
         self.vel_err_bound = 2.0
         # endregion
@@ -182,8 +179,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         return self.action_space
 
     def _set_observation_space(self):
-        if self.is_io_history: obs_shape = self.o_dim
-        else: obs_shape = self.s_dim
+        if self.is_io_history: obs_shape = 22
+        else: obs_shape = self.o_dim
         observation_space = Box(low=-np.inf, high=np.inf, shape=(obs_shape,))
         return observation_space
 
@@ -207,12 +204,11 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         )
 
     def _init_history_ff(self):
-        s_curr = np.copy(self._get_state_curr())
-        d_curr = np.concatenate([self.xQd[0], self.vQd[0]])
-        e_curr = np.copy(self.e_curr)
-        a_curr = np.copy(self.action)
-        [self.s_buffer.append(s_curr) for _ in range(self.history_len)]
-        [self.d_buffer.append(d_curr) for _ in range(self.history_len)]
+        s_curr = self._get_state_curr()
+        obs_curr = self._get_obs_curr()
+        e_curr = obs_curr[0:6]
+        a_curr = obs_curr[18:]
+        [self.s_buffer.append(s_curr) for _ in range(self.delay_len)]
         [self.e_buffer.append(e_curr) for _ in range(self.history_len)]
         [self.a_buffer.append(a_curr) for _ in range(self.history_len)]
 
@@ -273,9 +269,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             self.difficulty = self.stage * self.progress["setpoint"]
         if self.traj_type == 'curve':
             self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt,
-                                           ax=np.random.choice([-1,1])*3*self.progress["curve"],
-                                           ay=np.random.choice([-1,1])*3*self.progress["curve"],
-                                           az=np.random.choice([-1,1])*3*self.progress["curve"],
+                                           ax=np.random.choice([-1,1])*5*self.progress["curve"],
+                                           ay=np.random.choice([-1,1])*5*self.progress["curve"],
+                                           az=np.random.choice([-1,1])*5*self.progress["curve"],
                                            f1=np.random.choice([-1,1])*0.5*self.progress["curve"],
                                            f2=np.random.choice([-1,1])*0.5*self.progress["curve"],
                                            f3=np.random.choice([-1,1])*0.5*self.progress["curve"])
@@ -333,44 +329,45 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.edψP_prev = 0
 
     def _get_state_curr(self):
-        self.xQ = self.data.qpos[0:3] + np.clip(np.random.normal(loc=0, scale=0.025, size=3), -0.025, 0.025)
-        self.R = euler2rot(quat2euler_raw(self.data.qpos[3:7])
-                           + np.clip(self.np_random.normal(loc=0, scale=np.pi/36, size=3), -np.pi/36, np.pi/36))
-        self.vQ = self.data.qvel[0:3] + np.clip(np.random.normal(loc=0, scale=0.1, size=3), -0.05, 0.05)
-        self.ω = self.data.qvel[3:6] + np.clip(self.np_random.normal(loc=0, scale=np.pi/18, size=3), -np.pi/18, np.pi/18)
-        return np.concatenate([self.xQ, self.R.flatten(), self.vQ, self.ω])
+        self.xQ_curr = self.data.qpos[0:3]
+        self.R_curr = quat2rot(self.data.qpos[3:7]).flatten()
+        self.vQ_curr = self.data.qvel[0:3]
+        self.ω_curr = self.data.qvel[3:6]
+        return np.concatenate([self.xQ_curr, self.R_curr, self.vQ_curr, self.ω_curr])
 
     def _get_obs(self):
         # Present
-        self.obs_curr = self._get_obs_curr()  # 28
+        self.obs_curr = self._get_obs_curr()
 
         # Past
-        s_buffer = np.array(self.s_buffer, dtype=object).flatten()
-        d_buffer = np.array(self.d_buffer, dtype=object).flatten()
         e_buffer = np.array(self.e_buffer, dtype=object).flatten()
         a_buffer = np.array(self.a_buffer, dtype=object).flatten()
-        io_history = np.concatenate([s_buffer, d_buffer, e_buffer, a_buffer])  # 170
+        io_history = np.concatenate([e_buffer, a_buffer])  # 50
 
         # Future
-        xQd = self.xQd[self.timestep : self.timestep + self.future_len]
-        vQd = self.vQd[self.timestep : self.timestep + self.future_len]
         xQ_ff = self.xQ - self.xQd[self.timestep : self.timestep + self.future_len]
         vQ_ff = self.vQ - self.vQd[self.timestep : self.timestep + self.future_len]
-        ff = np.concatenate([(xQd @ self.R).flatten(), (vQd @ self.R).flatten(),
-                             (xQ_ff @ self.R).flatten(), (vQ_ff @ self.R).flatten()])  # 36
+        ff = np.concatenate([(xQ_ff @ self.R).flatten(), (vQ_ff @ self.R).flatten()])  # 18
 
         obs_full = np.concatenate([self.obs_curr, io_history, ff])
 
         return obs_full
 
     def _get_obs_curr(self):
-        self.s_curr = self._get_state_curr()
+        self.xQ = self.data.qpos[0:3] + np.clip(np.random.normal(loc=0, scale=0.025, size=3), -0.025, 0.025)
+        self.vQ = self.data.qvel[0:3] + np.clip(np.random.normal(loc=0, scale=0.1, size=3), -0.05, 0.05)
         
         self.exQ = self.xQ - self.xQd[self.timestep]
         self.evQ = self.vQ - self.vQd[self.timestep]
+        
+        self.R = euler2rot(quat2euler_raw(self.data.qpos[3:7])
+                           + np.clip(self.np_random.normal(loc=0, scale=np.pi/36, size=3), -np.pi/36, np.pi/36))
+        self.ω = self.data.qvel[3:6] + np.clip(self.np_random.normal(loc=0, scale=np.pi/18, size=3), -np.pi/18, np.pi/18)
+
         self.e_curr = np.concatenate([self.R.T @ self.exQ, self.R.T @ self.evQ])
 
-        obs_curr = np.concatenate([self.s_curr, self.e_curr, self.action])  # 28
+        obs_curr = np.concatenate([self.e_curr,                             # 6                                                    
+                                   self.R.flatten(), self.ω, self.action])  # 16
 
         return obs_curr
     
@@ -476,18 +473,17 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         return f
 
     def _update_data(self, reward, step=True):
-        """ TEST """
-        # self._record()
-        # Past
-        self.s_buffer.append(self.s_curr)
-        self.d_buffer.append(np.concatenate([self.xQd[self.timestep], self.vQd[self.timestep]]))
-        self.e_buffer.append(self.e_curr)
-        self.a_buffer.append(self.action)
-        self.action_last = self.action
-        # Present
-        self.time_in_sec = np.round(self.time_in_sec + self.policy_dt, 2)
-        self.timestep += self.num_sims_per_env_step
-        self.total_reward += reward
+        if step:
+            """ TEST """
+            # self._record()
+            # Past
+            self.e_buffer.append(self.e_curr)
+            self.a_buffer.append(self.action)
+            self.action_last = self.action
+            # Present
+            self.time_in_sec = np.round(self.time_in_sec + self.policy_dt, 2)
+            self.timestep += self.num_sims_per_env_step
+            self.total_reward += reward
     
     def _record(self):
         self.test_record_Q.record(pos_curr=self.xQ, vel_curr=self.vQ, pos_d=self.xQd[self.timestep], vel_d=self.vQd[self.timestep])

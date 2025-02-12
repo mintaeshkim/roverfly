@@ -11,7 +11,7 @@ current_dir = os.path.dirname(__file__)
 parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.append(os.path.join(parent_dir))
 sys.path.append(os.path.join(parent_dir, 'envs'))
-from envs.quadrotor_env import QuadrotorEnv
+from envs.quadrotor_fb_env import QuadrotorEnv
 
 # PPO 모델 초기화
 activation_fn = th.nn.Tanh
