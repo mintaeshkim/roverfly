@@ -86,7 +86,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer          = deque(np.zeros((self.history_len, self.s_dim)), maxlen=self.history_len)  # [x, R, v, ω]
         self.d_buffer          = deque(np.zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(np.zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
-        self.action_last       = np.array([-1, 0, 0, 0])
+        self.action_last       = np.array([-1, 0, 0, 0]) # np.zeros(self.a_dim)
         self.num_episode       = 0
         self.history_epi       = {'setpoint': deque([0]*10, maxlen=10),
                                   'curve': deque([0]*10, maxlen=10)}
@@ -133,13 +133,21 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         ################### PD CONTROL ###################
         ##################################################
         # region
-        # Quadrotor Characteristic Values
         self.mQ = 0.8
         self.mP = 0.1
         self.g = 9.81
         self.JQ = np.array([[0.49, 0, 0],
                             [0, 0.53, 0],
                             [0, 0, 0.98]]) * 1e-2
+        self.kPdφ, self.kPdθ, self.kPdψ = 1.0, 1.0, 0.8
+        self.kIdφ, self.kIdθ, self.kIdψ = 0.0, 0.0, 0.0  # 0.0001, 0.0001, 0.00008
+        self.kDdφ, self.kDdθ, self.kDdψ = 0.0, 0.0, 0.0  # 0.001, 0.001, 0.0008
+        
+        self.clipI = 0.15
+
+        self.edφI, self.edθI, self.edψI = 0, 0, 0
+        self.edφP_prev, self.edθP_prev, self.edψP_prev = 0, 0, 0
+
         self.l = 0.1524
         self.d = self.l / np.sqrt(2)
         self.κ = 0.025
@@ -147,14 +155,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                                          [self.d, -self.d, -self.d, self.d],
                                          [-self.d, -self.d, self.d, self.d],
                                          [-self.κ, self.κ, -self.κ, self.κ]]))
-        
-        # PID Control
-        self.kPdφ, self.kPdθ, self.kPdψ = 1.0, 1.0, 0.8
-        self.kIdφ, self.kIdθ, self.kIdψ = 0.0, 0.0, 0.0  # 0.0001, 0.0001, 0.00008
-        self.kDdφ, self.kDdθ, self.kDdψ = 0.0, 0.0, 0.0  # 0.001, 0.001, 0.0008
-        self.clipI = 0.15
-        self.edφI, self.edθI, self.edψI = 0, 0, 0
-        self.edφP_prev, self.edθP_prev, self.edψP_prev = 0, 0, 0
+        self.CR, self.wb, self.cT = 1148, -141.4, 1.105e-5
 
         # Rotor Dynamics
         self.tau_up = 0.2164
@@ -163,19 +164,20 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.max_thrust = 30  # N
         self.actual_forces = (self.mQ * self.g / 4) * np.ones(4)
 
-        # Delay Parameters (From ground station to quadrotor)
-        self.delay_range = [0.01, 0.02]  # 10 to 20 ms
-        # To simulate the delay for data transmission
+        # Delay Parameters (from ground station to quadrotor)
+        self.delay_range = [0.01, 0.02] # 10 to 20 ms
+        # to simulate the delay for data transmission
         self.action_queue = deque([[self.data.time, self.action_last]], maxlen=round(self.delay_range[1]/self.policy_dt))
-        # endregion
 
+
+        # endregion
 
         self.time = 0
 
     @property
     def dt(self) -> float:
         return self.model.opt.timestep * self.frame_skip
-  
+
     def _set_action_space(self):
         # CTBR
         low = np.array([-1, -1, -1, -1])
@@ -234,7 +236,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.timestep     = 0  # discrete timestep, k
         self.time_in_sec  = 0.0  # time
         
-        self.action_last  = np.array([-1, 0, 0, 0])
+        self.action_last  = np.array([-1, 0, 0, 0]) # np.zeros(self.a_dim)
         self.q_last       = np.array([0,0,-1])
         
         self._reset_model()
@@ -391,7 +393,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     def step(self, action, restore=False):
         # 1. Simulate for Single Time Step
         self.action = action
-        if self.is_delayed: self.action_queue.append([self.data.time, self.action])
+        # print("Time", self.data.time, "Action: ", action)
+        if self.is_delayed:
+            self.action_queue.append([self.data.time, self.action])
+
         for _ in range(self.num_sims_per_env_step):
             self.do_simulation(self.action, self.frame_skip)  # a_{t}
         if self.render_mode == "human": self.render()
@@ -406,18 +411,23 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # 5. Update Data
         self._update_data(reward=reward, step=True)
 
-        return obs_full, reward, terminated, truncated, {}
+        return obs_full, reward, terminated, truncated, self.info
     
     def do_simulation(self, ctrl, n_frames) -> None:
         # if np.array(ctrl).shape != (self.model.nu,):
         #     raise ValueError(f"Action dimension mismatch. Expected {(self.model.nu,)}, found {np.array(ctrl).shape}")
-        # ctrl = self._ctbr2srt(ctrl)
-        if self.is_delayed:
+        if self. is_delayed:
+            # Get delay time
             delay_time = np.random.uniform(self.delay_range[0], self.delay_range[1])
+
             if self.data.time - self.action_queue[0][0] >= delay_time:
                 ctrl = self.action_queue.popleft()[1]
-        else:
+                # print("Time", self.data.time, "Delayed action: ", ctrl)
+
+        if self.is_action_bound:
             ctrl = self._ctbr2srt(ctrl)
+
+        ctrl = self._ctbr2srt(ctrl)
         self._step_mujoco_simulation(ctrl, n_frames)
 
     def _step_mujoco_simulation(self, ctrl, n_frames):
@@ -505,15 +515,19 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         w_ψQ = 1.0
         w_ωQ = 0.5
         w_Δa = 0.2
+        w_effort = 0.1
+        w_cmd_rates =0.01
 
-        reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
+        reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa, w_effort])
         weights = reward_weights / np.sum(reward_weights)
 
         scale_xQ = 1.0/0.5
         scale_vQ = 1.0/2.0
         scale_ψQ = 1.0/(np.pi/2)
         scale_ωQ = 1.0/0.25
-        scale_Δa = 1.0/4.0
+        scale_Δa = 1.0/4.0  # sqrt(4*2^2) ~ 4
+        scale_effort = 1.0/4  # hover thrust ~ 2 N on each rotor sqrt(4*2^2) ~ 4
+        # scale_cmd_rates = 1.0/()
 
         ψQd = 0
         ψQ  = quat2euler_raw(self.data.qpos[3:7])[2]
@@ -523,9 +537,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         eψQ = np.abs(ψQ - ψQd)
         eωQ = np.linalg.norm(self.ω, ord=2)
         eΔa = np.linalg.norm(self.action - self.action_last)
+        effort = np.linalg.norm(self.actual_forces, ord=2)
 
-        rewards = np.exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa])
-                         *np.array([exQ, evQ, eψQ, eωQ, eΔa]))
+        rewards = np.exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa, scale_effort])
+                         *np.array([exQ, evQ, eψQ, eωQ, eΔa, effort]))
         reward_dict = dict(zip(names, weights * rewards))
         
         if self.traj_type == "setpoint":
