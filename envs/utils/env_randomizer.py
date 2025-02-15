@@ -41,7 +41,7 @@ class EnvRandomizer(object):
         for gear in self.model.actuator_gear:
             gear *= (1.0 + uniform(low=-self.actuator_gear_noise_scale, high=self.actuator_gear_noise_scale))
 
-        print()
+        print(self.model.actuator_gear)
 
     def reset(self):
         self.model.body_ipos = self._default_body_ipos
@@ -56,7 +56,7 @@ def random_deviation_quaternion(original_quaternion, max_angle_degrees):
     random_angle = uniform(low=0, high=max_angle_degrees) * np.pi / 180
     w = cos(random_angle / 2)
     xyz = random_axis * sin(random_angle / 2)
-    random_quaternion = np.concatenate([w, xyz])
+    random_quaternion = np.concatenate([[w], xyz])
     return quaternion_multiply(original_quaternion, random_quaternion)
 
 def quaternion_multiply(q1, q2):
@@ -67,3 +67,10 @@ def quaternion_multiply(q1, q2):
     y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
     z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
     return np.array([w, x, y, z])
+
+
+if __name__ == "__main__":
+    xml_file = "../../assets/quadrotor_falcon.xml"
+    model = mj.MjModel.from_xml_path(xml_file)
+    env_randomizer = EnvRandomizer(model=model)
+    env_randomizer.randomize_env()

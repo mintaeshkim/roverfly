@@ -5,9 +5,9 @@ parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.append(os.path.join(parent_dir))
 sys.path.append(os.path.join(parent_dir, 'envs'))
 import numpy as np
-from numpy import abs, clip, concatenate, copy, exp, mean, pi, round, sum
+from numpy import abs, clip, concatenate, copy, exp, mean, pi, round, sum, sqrt
 from numpy.random import choice, uniform, normal
-from numpy.linalg import norm
+from numpy.linalg import inv, norm
 from scipy.spatial.transform import Rotation as R
 from typing import Dict, Union
 from collections import deque
@@ -144,9 +144,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                             [0, 0.53, 0],
                             [0, 0, 0.98]]) * 1e-2
         self.l = 0.1524
-        self.d = self.l / np.sqrt(2)
+        self.d = self.l / sqrt(2)
         self.κ = 0.025
-        self.A = np.linalg.inv(np.array([[1, 1, 1, 1],
+        self.A = inv(np.array([[1, 1, 1, 1],
                                          [self.d, -self.d, -self.d, self.d],
                                          [-self.d, -self.d, self.d, self.d],
                                          [-self.κ, self.κ, -self.κ, self.κ]]))
@@ -169,7 +169,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # Delay Parameters (From ground station to quadrotor)
         self.delay_range = [0.01, 0.02]  # 10 to 20 ms
         # To simulate the delay for data transmission
-        self.action_queue = deque([[self.data.time, self.action_last]], maxlen=round(self.delay_range[1]/self.policy_dt))
+        self.action_queue = deque([[self.data.time, self.action_last]], maxlen=round(self.delay_range[1] / self.policy_dt))
         # endregion
 
         self.time = 0
@@ -318,8 +318,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         """ Randomize the zeroth and the 2nd moments """
         mQ = copy(self.mQ) * clip(normal(1, 1), 0.95, 1.05)
         JQ = copy(self.JQ) @ np.array([[clip(normal(1, 1), 0.95, 1.05), 0, 0],
-                                          [0, clip(normal(1, 1), 0.95, 1.05), 0],
-                                          [0, 0, clip(normal(1, 1), 0.95, 1.05)]])
+                                        [0, clip(normal(1, 1), 0.95, 1.05), 0],
+                                        [0, 0, clip(normal(1, 1), 0.95, 1.05)]])
         self.model.body_mass[self.body_id] = mQ
         self.model.body_inertia[self.body_id] = np.diag(JQ)
 
