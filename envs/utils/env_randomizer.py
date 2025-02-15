@@ -1,7 +1,6 @@
 import mujoco as mj
 import numpy as np
-from numpy.random import uniform
-from numpy.random import randn
+from numpy.random import uniform, randn
 from numpy.linalg import norm
 from numpy import cos, sin
 
@@ -40,8 +39,6 @@ class EnvRandomizer(object):
         
         for gear in self.model.actuator_gear:
             gear *= (1.0 + uniform(low=-self.actuator_gear_noise_scale, high=self.actuator_gear_noise_scale))
-
-        print(self.model.actuator_gear)
 
     def reset(self):
         self.model.body_ipos = self._default_body_ipos

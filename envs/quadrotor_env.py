@@ -18,11 +18,11 @@ from gymnasium import utils
 import mujoco as mj
 from mujoco_gym.mujoco_env import MujocoEnv
 # ETC
-from envs.utils.action_filter import ActionFilterButter
-from envs.utils.utility_functions import *
 import envs.utils.utility_trajectory as ut
-from envs.utils.rotation_transformations import *
+from envs.utils.env_randomizer import EnvRandomizer
 from envs.utils.geo_tools import hat, vee
+from envs.utils.utility_functions import *
+from envs.utils.rotation_transformations import *
 import time
 import matplotlib.pyplot as plt
 
@@ -45,6 +45,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.model = mj.MjModel.from_xml_path(xml_file)
         self.data = mj.MjData(self.model)
         self.body_id = self.model.body(name="quadrotor").id
+        self.env_randomizer = EnvRandomizer(model=self.model)
         self.frame_skip = frame_skip
         
         ##################################################
@@ -129,7 +130,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         ################# INITIALIZATION #################
         ##################################################
         # region
-        self._init_action_filter()
         self._init_env()
         # endregion
         ##################################################
@@ -169,7 +169,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # Delay Parameters (From ground station to quadrotor)
         self.delay_range = [0.01, 0.02]  # 10 to 20 ms
         # To simulate the delay for data transmission
-        self.action_queue = deque([[self.data.time, self.action_last]], maxlen=round(self.delay_range[1] / self.policy_dt))
+        self.action_queue = deque([[self.data.time, self.action_last]], maxlen=int(self.delay_range[1] / self.policy_dt))
         # endregion
 
         self.time = 0
@@ -202,15 +202,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # print("Num sims / Env step: {}".format(self.num_sims_per_env_step))
         print("-"*100)
 
-    def _init_action_filter(self):
-        self.action_filter = ActionFilterButter(
-            lowcut        = [0.0],
-            highcut       = [20.0],
-            sampling_rate = self.policy_freq,
-            order         = 2,
-            num_joints    = self.a_dim,
-        )
-
     def _init_history_ff(self):
         s_curr = copy(self._get_state_curr())
         d_curr = concatenate([self.xQd[0] / self.pos_bound, self.vQd[0] / self.vel_bound])
@@ -221,18 +212,16 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
     def reset(self, seed=None, randomize=None):
         # super().reset(seed=self.env_num)
-        self._reset_env(randomize=True)
+        self._reset_env()
         self._reset_error()
-        self.action_filter.reset()
-        self.action_filter.init_history(np.zeros(self.a_dim))
         self._init_history_ff()
         self._update_data(step=False, reward=0)
+        self.env_randomizer.reset()
         obs = self._get_obs()
-        # obs = self._get_obs_curr()
         self.info = self._get_reset_info()
         return obs, self.info
   
-    def _reset_env(self, randomize=False):
+    def _reset_env(self):
         self.timestep     = 0  # discrete timestep, k
         self.time_in_sec  = 0.0  # time
         
@@ -302,9 +291,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.perturbation = self.progress["curve"]
 
         wx = 0.1 * uniform(0, self.perturbation)
-        watt = self._reset_noise_scale * (pi/18) * uniform(0, self.perturbation)
-        wv = self._reset_noise_scale * 0.1 * uniform(0, self.perturbation)
-        wω = self._reset_noise_scale * (pi/36) * uniform(0, self.perturbation)
+        watt = (pi/18) * uniform(0, self.perturbation)
+        wv = 0.1 * uniform(0, self.perturbation)
+        wω = (pi/36) * uniform(0, self.perturbation)
         
         xQ = self.xQd[0] + uniform(size=3, low=-wx, high=wx)
         attQ = euler2quat_raw(quat2euler_raw(self.init_qpos[3:7]) + uniform(size=3, low=-watt, high=watt))
@@ -315,13 +304,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         qvel = concatenate([vQ, ωQ])
         self.set_state(qpos, qvel)
 
-        """ Randomize the zeroth and the 2nd moments """
-        mQ = copy(self.mQ) * clip(normal(1, 1), 0.95, 1.05)
-        JQ = copy(self.JQ) @ np.array([[clip(normal(1, 1), 0.95, 1.05), 0, 0],
-                                        [0, clip(normal(1, 1), 0.95, 1.05), 0],
-                                        [0, 0, clip(normal(1, 1), 0.95, 1.05)]])
-        self.model.body_mass[self.body_id] = mQ
-        self.model.body_inertia[self.body_id] = np.diag(JQ)
+        """ Randomize env """
+        self.env_randomizer.randomize_env()
 
         self.action = np.zeros(self.a_dim)
         self.actual_forces = (self.mQ * self.g / 4) * np.ones(4)
@@ -442,9 +426,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
     def _ctbr2srt(self, action):
         zcmd = self.max_thrust * (action[0] + 1) / 2
-        dφd = np.tanh(action[1])
-        dθd = action[2]
-        dψd = action[3]
+        dφd = action[1] / 2
+        dθd = action[2] / 2
+        dψd = action[3] / 2
 
         self.edφP = dφd - self.ω[0]
         self.edφI = clip(self.edφI + self.edφP * self.sim_dt, -self.clipI, self.clipI)
