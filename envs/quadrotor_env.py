@@ -213,12 +213,13 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     def reset(self, seed=None, randomize=None):
         # super().reset(seed=self.env_num)
         self._reset_env()
+        self._reset_model()
         self._reset_error()
         self._init_history_ff()
-        self._update_data(step=False, reward=0)
-        self.env_randomizer.reset()
+        self._randomize_env()
         obs = self._get_obs()
         self.info = self._get_reset_info()
+        self.model = self.env_randomizer.randomize_env(self.model)
         return obs, self.info
   
     def _reset_env(self):
@@ -228,7 +229,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.action_last  = np.array([-1, 0, 0, 0])
         self.q_last       = np.array([0,0,-1])
         
-        self._reset_model()
         self.total_reward = 0
         self.terminated   = None
         self.info         = {}
@@ -290,10 +290,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # self.perturbation = 1e-5
         self.perturbation = self.progress["curve"]
 
-        wx = 0.1 * uniform(0, self.perturbation)
-        watt = (pi/18) * uniform(0, self.perturbation)
+        wx = 0.05 * uniform(0, self.perturbation)
+        watt = (pi/36) * uniform(0, self.perturbation)
         wv = 0.1 * uniform(0, self.perturbation)
-        wω = (pi/36) * uniform(0, self.perturbation)
+        wω = (pi/18) * uniform(0, self.perturbation)
         
         xQ = self.xQd[0] + uniform(size=3, low=-wx, high=wx)
         attQ = euler2quat_raw(quat2euler_raw(self.init_qpos[3:7]) + uniform(size=3, low=-watt, high=watt))
@@ -304,13 +304,19 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         qvel = concatenate([vQ, ωQ])
         self.set_state(qpos, qvel)
 
-        """ Randomize env """
-        self.env_randomizer.randomize_env()
-
-        self.action = np.zeros(self.a_dim)
+        self.action = np.array([-1, 0, 0, 0])
         self.actual_forces = (self.mQ * self.g / 4) * np.ones(4)
 
         return self._get_obs()
+
+    def _randomize_env(self):
+        mQ = copy(self.mQ) * clip(normal(1, 1), 0.95, 1.05)
+        JQ = copy(self.JQ) @ np.array([[clip(normal(1, 1), 0.95, 1.05), 0, 0],
+                                       [0, clip(normal(1, 1), 0.95, 1.05), 0],
+                                       [0, 0, clip(normal(1, 1), 0.95, 1.05)]])
+        self.model.body_mass[self.body_id] = mQ
+        self.model.body_inertia[self.body_id] = np.diag(JQ)
+
 
     def _reset_error(self):
         self.edφI = 0
