@@ -309,15 +309,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         return self._get_obs()
 
-    def _randomize_env(self):
-        mQ = copy(self.mQ) * clip(normal(1, 1), 0.95, 1.05)
-        JQ = copy(self.JQ) @ np.array([[clip(normal(1, 1), 0.95, 1.05), 0, 0],
-                                       [0, clip(normal(1, 1), 0.95, 1.05), 0],
-                                       [0, 0, clip(normal(1, 1), 0.95, 1.05)]])
-        self.model.body_mass[self.body_id] = mQ
-        self.model.body_inertia[self.body_id] = np.diag(JQ)
-
-
     def _reset_error(self):
         self.edφI = 0
         self.edθI = 0
