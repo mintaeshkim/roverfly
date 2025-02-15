@@ -169,7 +169,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.action_queue = deque([[self.data.time, self.action_last]], maxlen=round(self.delay_range[1]/self.policy_dt))
         # endregion
 
-
         self.time = 0
 
     @property
@@ -314,10 +313,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.set_state(qpos, qvel)
 
         """ Randomize the zeroth and the 2nd moments """
-        mQ = self.mQ * np.clip(np.random.normal(1, 1), 0.95, 1.05)
-        JQ = self.JQ @ np.array([[np.clip(np.random.normal(1, 1), 0.95, 1.05), 0, 0],
-                                 [0, np.clip(np.random.normal(1, 1), 0.95, 1.05), 0],
-                                 [0, 0, np.clip(np.random.normal(1, 1), 0.95, 1.05)]])
+        mQ = np.copy(self.mQ) * np.clip(np.random.normal(1, 1), 0.95, 1.05)
+        JQ = np.copy(self.JQ) @ np.array([[np.clip(np.random.normal(1, 1), 0.95, 1.05), 0, 0],
+                                          [0, np.clip(np.random.normal(1, 1), 0.95, 1.05), 0],
+                                          [0, 0, np.clip(np.random.normal(1, 1), 0.95, 1.05)]])
         self.model.body_mass[self.body_id] = mQ
         self.model.body_inertia[self.body_id] = np.diag(JQ)
 
@@ -416,8 +415,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             delay_time = np.random.uniform(self.delay_range[0], self.delay_range[1])
             if self.data.time - self.action_queue[0][0] >= delay_time:
                 ctrl = self.action_queue.popleft()[1]
-        else:
-            ctrl = self._ctbr2srt(ctrl)
+        ctrl = self._ctbr2srt(ctrl)
         self._step_mujoco_simulation(ctrl, n_frames)
 
     def _step_mujoco_simulation(self, ctrl, n_frames):
@@ -441,9 +439,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
     def _ctbr2srt(self, action):
         zcmd = self.max_thrust * (action[0] + 1) / 2
-        dφd = action[1] / 2
-        dθd = action[2] / 2
-        dψd = action[3] / 2
+        dφd = np.tanh(action[1])
+        dθd = action[2]
+        dψd = action[3]
 
         self.edφP = dφd - self.ω[0]
         self.edφI = np.clip(self.edφI + self.edφP * self.sim_dt, -self.clipI, self.clipI)
