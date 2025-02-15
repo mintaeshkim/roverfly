@@ -43,6 +43,14 @@ class EnvRandomizer(object):
         
         return model
 
+    def reset_env(self, model):
+        model.body_ipos = self._default_body_ipos
+        model.body_iquat = self._default_body_iquat
+        model.body_mass = self._default_body_mass
+        model.body_inertia = self._default_body_inertia
+        model.actuator_gear = self._default_actuator_gear
+        return model
+
 def random_deviation_quaternion(original_quaternion, max_angle_degrees):
     random_axis = randn(3)
     random_axis /= norm(random_axis)

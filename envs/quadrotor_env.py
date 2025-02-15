@@ -216,9 +216,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self._reset_model()
         self._reset_error()
         self._init_history_ff()
-        self._randomize_env()
         obs = self._get_obs()
         self.info = self._get_reset_info()
+        self.model = self.env_randomizer.reset_env(self.model)
         self.model = self.env_randomizer.randomize_env(self.model)
         return obs, self.info
   
@@ -391,10 +391,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         return obs_full, reward, terminated, truncated, {}
     
-    def do_simulation(self, ctrl, n_frames) -> None:
-        # if np.array(ctrl).shape != (self.model.nu,):
-        #     raise ValueError(f"Action dimension mismatch. Expected {(self.model.nu,)}, found {np.array(ctrl).shape}")
-        # ctrl = self._ctbr2srt(ctrl)
+    def do_simulation(self, ctrl, n_frames):
         if self.is_delayed:
             delay_time = uniform(self.delay_range[0], self.delay_range[1])
             if self.data.time - self.action_queue[0][0] >= delay_time:
@@ -404,7 +401,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
     def _step_mujoco_simulation(self, ctrl, n_frames):
         self._rotor_dynamics(ctrl)
-        self._apply_control(ctrl=self.actual_forces.reshape((4, 1)))
+        self._apply_control(ctrl=self.actual_forces)
         mj.mj_step(self.model, self.data, nstep=n_frames)
 
     def _rotor_dynamics(self, ctrl):
@@ -486,16 +483,16 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         w_vQ = 0.5
         w_ψQ = 1.0
         w_ωQ = 0.5
-        w_Δa = 0.2
+        w_a  = 0.5
 
-        reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
+        reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_a])
         weights = reward_weights / sum(reward_weights)
 
         scale_xQ = 1.0/0.5
         scale_vQ = 1.0/2.0
         scale_ψQ = 1.0/(pi/2)
         scale_ωQ = 1.0/0.25
-        scale_Δa = 1.0/4.0
+        scale_a  = 1.0/4.0
 
         ψQd = 0
         ψQ  = quat2euler_raw(self.data.qpos[3:7])[2]
@@ -504,10 +501,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         evQ = norm(self.evQ, ord=2)
         eψQ = abs(ψQ - ψQd)
         eωQ = norm(self.ω, ord=2)
-        eΔa = norm(self.action - self.action_last)
+        ea = norm(self.action, ord=2)
 
-        rewards = exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa])
-                      *np.array([exQ, evQ, eψQ, eωQ, eΔa]))
+        rewards = exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_a])
+                      *np.array([exQ, evQ, eψQ, eωQ, ea]))
         reward_dict = dict(zip(names, weights * rewards))
         
         if self.traj_type == "setpoint":
