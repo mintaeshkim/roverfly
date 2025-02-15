@@ -218,7 +218,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self._init_history_ff()
         obs = self._get_obs()
         self.info = self._get_reset_info()
-        self.model = self.env_randomizer.reset_env(self.model)
         self.model = self.env_randomizer.randomize_env(self.model)
         return obs, self.info
   
@@ -501,7 +500,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         evQ = norm(self.evQ, ord=2)
         eψQ = abs(ψQ - ψQd)
         eωQ = norm(self.ω, ord=2)
-        ea = norm(self.action, ord=2)
+        ea = norm(np.array([0.2, 1, 1, 1]) * self.action, ord=2)
 
         rewards = exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_a])
                       *np.array([exQ, evQ, eψQ, eωQ, ea]))

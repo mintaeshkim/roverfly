@@ -31,6 +31,8 @@ class EnvRandomizer(object):
         self.actuator_gear_noise_scale = 0.05
 
     def randomize_env(self, model):
+        model = self.reset_env(model=model)
+        
         for i in range(self.nbody):
             model.body_ipos[i] = self._default_body_ipos[i] + uniform(size=3, low=-self.ipos_noise_scale, high=self.ipos_noise_scale)
             body_iquat = random_deviation_quaternion(self._default_body_iquat[i], self.iquat_noise_scale)
