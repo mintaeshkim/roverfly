@@ -103,7 +103,7 @@ def main():
     
     # Networks
     # NOTE: if is_history: use 128 or more
-    activation_fn = th.nn.Tanh
+    activation_fn = th.nn.SiLU
     # net_arch = {'pi': [64,64,64],
     #             'vf': [64,64,64]}
     # net_arch = {'pi': [128,96,64],
@@ -112,12 +112,12 @@ def main():
     #             'vf': [256,128,64]}
     # net_arch = {'pi': [512,512],
     #             'vf': [512,512]}
-    net_arch = {'pi': [256,256],
-                'vf': [256,256]}
+    # net_arch = {'pi': [256,256],
+    #             'vf': [256,256]}
     # net_arch = {'pi': [64,64],
     #             'vf': [64,64]}
-    # net_arch = {'pi': [512,256,128],
-    #             'vf': [512,256,128]}
+    net_arch = {'pi': [512,256,128],
+                'vf': [512,256,128]}
 
     # PPO Modeling
     def linear_schedule(initial_value):
@@ -141,7 +141,7 @@ def main():
                 batch_size=batch_size, # 512*num_cpu  |  *16 if dt=0.01
                 gamma=0.99,  # 0.99 # look forward 1.65s
                 gae_lambda=0.95,  # 0.95
-                clip_range=linear_schedule(0.2),
+                clip_range=linear_schedule(0.02),
                 ent_coef=0.0, # Makes PPO explore 0.02
                 verbose=1,
                 policy_kwargs={'activation_fn':activation_fn, 'net_arch':net_arch}, # policy_kwargs={'activation': 'dual', 'thrust': 2.55, 'thrust_max': 5.0},

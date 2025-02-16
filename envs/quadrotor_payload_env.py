@@ -34,7 +34,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     def __init__(
         self,
         max_timesteps = 10000,  # 20 sec
-        xml_file: str = "../assets/quadrotor_falcon.xml",
+        xml_file: str = "../assets/quadrotor_x_cfg_payload.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
         reset_noise_scale: float = 1.0,
@@ -271,11 +271,15 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.qd = np.zeros((self.max_timesteps + self.history_len, 3))
         self.dqd = np.zeros((self.max_timesteps + self.history_len, 3))
         self.d2qd = np.zeros((self.max_timesteps + self.history_len, 3))
+        self.xQd = np.zeros((self.max_timesteps + self.history_len, 3))
+        self.vQd = np.zeros((self.max_timesteps + self.history_len, 3))
         for i in range(self.max_timesteps + self.history_len):
             self.xPd[i], self.vPd[i], self.aPd[i], self.daPd[i], self.qd[i], self.dqd[i], self.d2qd[i] = self.traj.get(i * self.policy_dt)
+            self.xQd[i] = self.xPd[i] - self.qd[i]
+            self.vQd[i] = self.vPd[i] - self.dqd[i]
         self.x_offset = self.pos_bound * uniform(size=3, low=-1, high=1)
-        self.xQd += self.x_offset
         self.xPd += self.x_offset
+        self.xQd += self.x_offset
         self.goal_pos = self.xPd[-1]
         self.dqd[0], self.d2qd[0] = np.zeros(3), np.zeros(3)
 
@@ -358,12 +362,12 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # self.q_last = self.q
         # qd, dqd = self._get_qd()
 
-        qd, dqd = self.qd[self.timestep], self.dqd[self.timestep]
-        self.xQd = self.xPd[self.timestep] - qd
-        self.vQd = self.vPd[self.timestep] - dqd
+        # qd, dqd = self.qd[self.timestep], self.dqd[self.timestep]
+        # self.xQd = self.xPd[self.timestep] - qd
+        # self.vQd = self.vPd[self.timestep] - dqd
 
-        self.exQ = self.xQ - self.xQd
-        self.evQ = self.vQ - self.vQd
+        self.exQ = self.xQ - self.xQd[self.timestep]
+        self.evQ = self.vQ - self.vQd[self.timestep]
 
         self.e_curr = concatenate([self.RQ.T @ self.exP, self.RQ.T @ self.evP, self.RQ.T @ self.exQ, self.RQ.T @ self.evQ])
 

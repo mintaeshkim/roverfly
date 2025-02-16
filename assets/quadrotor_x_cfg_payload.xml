@@ -95,9 +95,9 @@
     </tendon>
 
     <actuator>
-        <motor name="Motor0" ctrllimited="true" ctrlrange="0 5" gear="0  0. 1. 0. 0. -0.025" site="motor0"/>
-        <motor name="Motor1" ctrllimited="true" ctrlrange="0 5" gear="0  0. 1. 0. 0. -0.025" site="motor1"/>
-        <motor name="Motor2" ctrllimited="true" ctrlrange="0 5" gear="0  0. 1. 0. 0.  0.025" site="motor2"/>
-        <motor name="Motor3" ctrllimited="true" ctrlrange="0 5" gear="0  0. 1. 0. 0.  0.025" site="motor3"/>
+        <motor name="Motor0" ctrllimited="true" ctrlrange="0 14.981" gear="0  0. 1. 0. 0. -0.025" site="motor0"/>
+        <motor name="Motor1" ctrllimited="true" ctrlrange="0 14.981" gear="0  0. 1. 0. 0. -0.025" site="motor1"/>
+        <motor name="Motor2" ctrllimited="true" ctrlrange="0 14.981" gear="0  0. 1. 0. 0.  0.025" site="motor2"/>
+        <motor name="Motor3" ctrllimited="true" ctrlrange="0 14.981" gear="0  0. 1. 0. 0.  0.025" site="motor3"/>
     </actuator>
 </mujoco>
