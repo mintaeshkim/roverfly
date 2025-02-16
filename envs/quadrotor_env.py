@@ -8,7 +8,6 @@ import numpy as np
 from numpy import abs, clip, concatenate, copy, exp, mean, pi, round, sum, sqrt
 from numpy.random import choice, uniform, normal
 from numpy.linalg import inv, norm
-from scipy.spatial.transform import Rotation as R
 from typing import Dict, Union
 from collections import deque
 # Gym
@@ -20,7 +19,6 @@ from mujoco_gym.mujoco_env import MujocoEnv
 # ETC
 import envs.utils.utility_trajectory as ut
 from envs.utils.env_randomizer import EnvRandomizer
-from envs.utils.geo_tools import hat, vee
 from envs.utils.utility_functions import *
 from envs.utils.rotation_transformations import *
 import time
@@ -34,7 +32,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     
     def __init__(
         self,
-        max_timesteps = 10000,  # 20 seconds
+        max_timesteps = 10000,  # 20 sec
         xml_file: str = "../assets/quadrotor_falcon.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
@@ -81,21 +79,18 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.env_num           = env_num
         self.s_dim             = 18
         self.a_dim             = 4
+        self.o_dim             = 198
         self.history_len_short = 5
         self.history_len_long  = 10
         self.history_len       = self.history_len_short
         self.future_len        = 5
-        self.delay_len         = 3
-        self.o_dim             = 198
         self.s_buffer          = deque(np.zeros((self.history_len, self.s_dim)), maxlen=self.history_len)  # [x, R, v, ω]
         self.d_buffer          = deque(np.zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(np.zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
         self.action_last       = np.array([-1, 0, 0, 0])
         self.num_episode       = 0
-        self.history_epi       = {'setpoint': deque([0]*10, maxlen=10),
-                                  'curve': deque([0]*10, maxlen=10)}
-        self.progress          = {'setpoint': 1e-3,
-                                  'curve': 1e-3}
+        self.history_epi       = {'setpoint': deque([0]*10, maxlen=10), 'curve': deque([0]*10, maxlen=10)}
+        self.progress          = {'setpoint': 1e-3, 'curve': 1e-3}
         self.action_space      = self._set_action_space()
         self.observation_space = self._set_observation_space()
         # endregion
@@ -222,12 +217,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         return obs, self.info
   
     def _reset_env(self):
-        self.timestep     = 0  # discrete timestep, k
-        self.time_in_sec  = 0.0  # time
-        
+        self.timestep     = 0
+        self.time_in_sec  = 0.0
         self.action_last  = np.array([-1, 0, 0, 0])
-        self.q_last       = np.array([0,0,-1])
-        
         self.total_reward = 0
         self.terminated   = None
         self.info         = {}
@@ -280,14 +272,13 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.vQd = np.zeros((self.max_timesteps + self.history_len, 3))
         self.aQd = np.zeros((self.max_timesteps + self.history_len, 3))
         for i in range(self.max_timesteps + self.history_len):
-            self.xQd[i], self.vQd[i], self.aQd[i] = self.traj.get(i*self.policy_dt)
+            self.xQd[i], self.vQd[i], self.aQd[i] = self.traj.get(i * self.policy_dt)
         self.x_offset = self.pos_bound * uniform(size=3, low=-1, high=1)
         self.xQd += self.x_offset
         self.goal_pos = self.xQd[-1]
 
         """ Initial Perturbation """
-        # self.perturbation = 1e-5
-        self.perturbation = self.progress["curve"]
+        self.perturbation = self.progress[self.traj_type]
 
         wx = 0.05 * uniform(0, self.perturbation)
         watt = (pi/36) * uniform(0, self.perturbation)
@@ -350,25 +341,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     def _get_state_curr(self):
         self.xQ = self.data.qpos[0:3] + clip(normal(loc=0, scale=0.01, size=3), -0.01, 0.01)
         self.R = euler2rot(quat2euler_raw(self.data.qpos[3:7])
-                           + clip(normal(loc=0, scale=pi/36, size=3), -pi/60, pi/60))
+                           + clip(normal(loc=0, scale=pi/60, size=3), -pi/60, pi/60))
         self.vQ = self.data.qvel[0:3] + clip(normal(loc=0, scale=0.02, size=3), -0.02, 0.02)
-        self.ω = self.data.qvel[3:6] + clip(normal(loc=0, scale=pi/18, size=3), -pi/30, pi/30)
+        self.ω = self.data.qvel[3:6] + clip(normal(loc=0, scale=pi/30, size=3), -pi/30, pi/30)
         return concatenate([self.xQ / self.pos_bound, self.R.flatten(), self.vQ / self.vel_bound, self.ω])
-
-    def _get_qd(self):
-        l = 1.0
-        kx = 2 * np.diag([0.5, 0.5, 0.5])
-        kv = 2 * np.diag([0.75, 0.75, 0.75])
-        aPd = self.aPd[self.timestep] if self.timestep < self.max_timesteps else np.zeros(3)
-        dqd = self.dqd[self.timestep] if self.timestep < self.max_timesteps else self.dqd[-1]
-
-        # Compute qd that changes through time
-        Fff = (self.mQ + self.mP) * (aPd + np.array([0,0,self.g])) + self.mQ * l * np.dot(self.dq, self.dq) * self.q
-        Fpd = - kx @ self.exP - kv @ self.evP
-        A = Fff + Fpd
-        qd = - A / norm(A)
-
-        return qd, dqd
 
     def step(self, action, restore=False):
         # 1. Simulate for Single Time Step
@@ -441,7 +417,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.edψP_prev = self.edψP
         ψcmd = clip(self.kPdψ * self.edψP + self.kIdψ * self.edψI + self.kDdψ * self.edψD, -2, 2)
 
-        # Original
         Mcmd = np.array([φcmd, θcmd, ψcmd])
         f = self.A @ concatenate([[zcmd], Mcmd]).reshape((4,1))
         f = clip(f.flatten(), 0, self.rotor_max_thrust)
@@ -476,7 +451,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.test_record_Q.record(pos_curr=self.xQ, vel_curr=self.vQ, pos_d=self.xQd[self.timestep], vel_d=self.vQd[self.timestep])
 
     def _get_reward(self):
-        names = ['xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew']
+        names = ['xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'a_rew']
         
         w_xQ = 1.0
         w_vQ = 0.5
