@@ -765,3 +765,9 @@ class TestRecord:
 
 if __name__ == "__main__":
     env = QuadrotorPayloadEnv()
+
+
+
+### TODO
+# 1. Randomize env
+# 2. Check and get rid of get qd
