@@ -638,7 +638,6 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             self.mujoco_renderer.close()
 
 
-
 class TestRecord:
     def __init__(self, max_timesteps, record_object, num_sims_per_env_step):
         self.max_timesteps = max_timesteps
@@ -762,12 +761,10 @@ class TestRecord:
         print("Data saved to state_data.csv")
 
 
-
 if __name__ == "__main__":
     env = QuadrotorPayloadEnv()
 
 
-
-### TODO
+# TODO
 # 1. Randomize env
 # 2. Check and get rid of get qd

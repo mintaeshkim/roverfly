@@ -45,6 +45,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.body_id = self.model.body(name="quadrotor").id
         self.env_randomizer = EnvRandomizer(model=self.model)
         self.frame_skip = frame_skip
+        self.control_scheme = "srt"  # "ctbr"
         
         ##################################################
         #################### DYNAMICS ####################
@@ -68,9 +69,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         #################### BOOLEANS ####################
         ##################################################
         # region
-        self.is_action_bound    = False
-        self.is_io_history      = True
-        self.is_delayed         = True
+        self.is_action_bound   = False
+        self.is_io_history     = True
+        self.is_delayed        = True
+        self.is_env_randomized = False
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -87,7 +89,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer          = deque(np.zeros((self.history_len, self.s_dim)), maxlen=self.history_len)  # [x, R, v, ω]
         self.d_buffer          = deque(np.zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(np.zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
-        self.action_last       = np.array([-1, 0, 0, 0])
+        self.action_last       = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else 1.962 * np.ones(4)
         self.num_episode       = 0
         self.history_epi       = {'setpoint': deque([0]*10, maxlen=10), 'curve': deque([0]*10, maxlen=10)}
         self.progress          = {'setpoint': 1e-3, 'curve': 1e-3}
@@ -213,13 +215,13 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self._init_history_ff()
         obs = self._get_obs()
         self.info = self._get_reset_info()
-        self.model = self.env_randomizer.randomize_env(self.model)
+        if self.is_env_randomized: self.model = self.env_randomizer.randomize_env(self.model)
         return obs, self.info
   
     def _reset_env(self):
         self.timestep     = 0
         self.time_in_sec  = 0.0
-        self.action_last  = np.array([-1, 0, 0, 0])
+        self.action_last  = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else 1.962 * np.ones(4)
         self.total_reward = 0
         self.terminated   = None
         self.info         = {}
@@ -371,7 +373,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             delay_time = uniform(self.delay_range[0], self.delay_range[1])
             if self.data.time - self.action_queue[0][0] >= delay_time:
                 ctrl = self.action_queue.popleft()[1]
-        ctrl = self._ctbr2srt(ctrl)
+        if self.control_scheme == "ctbr": ctrl = self._ctbr2srt(ctrl)  # CTBR
+        else: ctrl = self.rotor_max_thrust * (ctrl + 1) / 2  # SRT
         self._step_mujoco_simulation(ctrl, n_frames)
 
     def _step_mujoco_simulation(self, ctrl, n_frames):
@@ -475,7 +478,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         evQ = norm(self.evQ, ord=2)
         eψQ = abs(ψQ - ψQd)
         eωQ = norm(self.ω, ord=2)
-        ea = norm(np.array([0.2, 1, 1, 1]) * self.action, ord=2)
+        if self.control_scheme == "ctbr":
+            ea = norm(np.array([0.2, 1, 1, 1]) * self.action, ord=2)
+        else:
+            ea = norm(self.action + 0.4768 * np.ones(4), ord=2)
 
         rewards = exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_a])
                       *np.array([exQ, evQ, eψQ, eωQ, ea]))
