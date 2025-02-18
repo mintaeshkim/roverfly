@@ -41,7 +41,8 @@ class EnvRandomizer(object):
             model.body_inertia[i] = self._default_body_inertia[i] * (1.0 + uniform(size=3, low=-self.inertia_noise_scale, high=self.inertia_noise_scale))
         
         for gear in model.actuator_gear:
-            gear *= (1.0 + uniform(low=-self.actuator_gear_noise_scale, high=self.actuator_gear_noise_scale))
+            gear[2] *= (1.0 + uniform(low=-self.actuator_gear_noise_scale, high=self.actuator_gear_noise_scale))
+            gear[-1] *= (1.0 + uniform(low=-self.actuator_gear_noise_scale, high=self.actuator_gear_noise_scale))
         
         return model
 
