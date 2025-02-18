@@ -255,6 +255,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         """ TEST """
         # self.stage = 2
         self.traj_type = 'setpoint'
+        # self.traj_type = 'full'
 
         """ Set trajectory parameters """
         if self.traj_type == 'setpoint':
@@ -269,11 +270,26 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                                            f2=choice([-1,1])*0.5*self.progress["curve"],
                                            f3=choice([-1,1])*0.5*self.progress["curve"])
             self.difficulty = self.stage * self.progress["curve"]
+        if self.traj_type == 'full':
+            self.traj = ut.FullCrazyTrajectory(tf=20)
+            self.difficulty = 0
+            self.traj_type = 'setpoint'
         
         # self.traj.plot()
         # self.traj.plot3d_payload()
 
-        """ Compute trajectory """
+        """ Generate trajectory """
+        self._generate_trajectory()
+
+        """ Initial perturbation """
+        self._set_initial_perturbation()
+
+        self.action = self.action_offset
+        self.actual_forces = self.force_offset
+
+        return self._get_obs()
+
+    def _generate_trajectory(self):
         self.xQd = np.zeros((self.max_timesteps + self.history_len, 3))
         self.vQd = np.zeros((self.max_timesteps + self.history_len, 3))
         self.aQd = np.zeros((self.max_timesteps + self.history_len, 3))
@@ -283,7 +299,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.xQd += self.x_offset
         self.goal_pos = self.xQd[-1]
 
-        """ Initial Perturbation """
+    def _set_initial_perturbation(self):
         self.perturbation = self.progress[self.traj_type]
 
         wx = 0.05 * uniform(0, self.perturbation)
@@ -299,11 +315,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         qpos = concatenate([xQ, attQ])
         qvel = concatenate([vQ, ωQ])
         self.set_state(qpos, qvel)
-
-        self.action = self.action_offset
-        self.actual_forces = self.force_offset
-
-        return self._get_obs()
 
     def _reset_error(self):
         self.edφI = 0

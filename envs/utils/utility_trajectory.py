@@ -1,7 +1,13 @@
+# Helpers
+import os, sys
+current_dir = os.path.dirname(__file__)
+parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
+sys.path.append(os.path.join(parent_dir))
+sys.path.append(os.path.join(parent_dir, 'utils'))
 import numpy as np
 import warnings
 import matplotlib.pyplot as plt
-from envs.utils.geo_tools import *
+from utils.geo_tools import *
 
 def random_point_on_sphere(radius):
     theta = np.random.uniform(0, 2 * np.pi)
@@ -28,8 +34,10 @@ class Trajectory:
         v = np.empty((0, 3))
         a = np.empty((0, 3))
         for t in T:
-            # x_, v_, a_ = self.get(t)
-            x_, v_, a_, _, _, _, _ = self.get(t)  # Payload
+            if len(self.get(t)) == 7:
+                x_, v_, a_, _, _, _, _ = self.get(t)  # Payload
+            if len(self.get(t)) == 3:
+                x_, v_, a_ = self.get(t)
             x = np.append(x, np.array([x_]), axis=0)
             v = np.append(v, np.array([v_]), axis=0)
             a = np.append(a, np.array([a_]), axis=0)
@@ -181,14 +189,6 @@ class SmoothTraj(Trajectory):
             return (np.array([self._t(l)]) @ self._pos_params)[0],\
                    (np.array([self._t(l)]) @ self._vel_params)[0],\
                    (np.array([self._t(l)]) @ self._acc_params)[0]
-
-
-class SmoothTrajSecant(SmoothTraj):
-    def compute_traj_params(self):
-        a = self._xf - self._x0
-        self._pos_params = np.array([self._x0, np.zeros(3), np.zeros(3), 10*a, -15*a, 6*a])
-        self._vel_params = np.array([np.zeros(3), 2*np.zeros(3), 3*10*a, 4*(-15)*a, 5*6*a, np.zeros(3)])
-        self._acc_params = np.array([np.zeros(3), 6*10*a, 12*(-15)*a, 20*6*a, np.zeros(3), np.zeros(3)])
 
 
 class SmoothTraj5(SmoothTraj):
@@ -869,6 +869,28 @@ class GeometricTrajectoryPayload(Trajectory):
         return x, v, a, da, d2a, d3a, d4a, q, dq, d2q, d3q, d4q
     
 
+class FullCrazyTrajectory(Trajectory):
+    def __init__(self, tf=20):
+        super().__init__(tf)
+        self.takeoff_traj = SmoothTraj5(x0=np.array([0, 0, 0]), xf=np.array([0, 0, 1.5]), tf=2)
+        self.crazy_traj = CrazyTrajectory(tf=self._tf-4, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
+        self.landing_traj = None
+
+    def get(self, t):
+        if t < 2:  # Takeoff Phase
+            return self.takeoff_traj.get(t)
+        elif t < 18:  # Crazy Trajectory Phase
+            x, v, a = self.crazy_traj.get(t - 2)
+            x += np.array([0, 0, 1.5])
+            return x, v, a
+        else:  # Landing Phase
+            if self.landing_traj is None:
+                final_pos, _, _ = self.crazy_traj.get(self._tf-4)
+                final_pos += np.array([0, 0, 1.5])
+                self.landing_traj = SmoothTraj5(x0=final_pos, xf=[final_pos[0], final_pos[1], 0], tf=2)
+            return self.landing_traj.get(t - 18)
+
+
 if __name__ == "__main__":
 
     # Example usage of different trajectories
@@ -965,12 +987,16 @@ if __name__ == "__main__":
     # print(traj.get(10)[0])
     # traj.plot3d_payload()
 
-    traj = CrazyTrajectoryPayloadMultiple(tf=10,
-                                          ax=np.random.choice([-1,1])*5*0.5,
-                                          ay=np.random.choice([-1,1])*5*0.5,
-                                          az=np.random.choice([-1,1])*5*0.5,
-                                          f1=np.random.choice([-1,1])*0.5*0.5,
-                                          f2=np.random.choice([-1,1])*0.5*0.5,
-                                          f3=np.random.choice([-1,1])*0.5*0.5)
+    # traj = CrazyTrajectoryPayloadMultiple(tf=10,
+    #                                       ax=np.random.choice([-1,1])*5*0.5,
+    #                                       ay=np.random.choice([-1,1])*5*0.5,
+    #                                       az=np.random.choice([-1,1])*5*0.5,
+    #                                       f1=np.random.choice([-1,1])*0.5*0.5,
+    #                                       f2=np.random.choice([-1,1])*0.5*0.5,
+    #                                       f3=np.random.choice([-1,1])*0.5*0.5)
     # traj.plot()
-    traj.plot3d_payload_multiple()
+    # traj.plot3d_payload_multiple()
+
+    traj = FullCrazyTrajectory(tf=20)
+    traj.plot()
+    traj.plot3d()
