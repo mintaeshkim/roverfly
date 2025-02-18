@@ -33,7 +33,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     
     def __init__(
         self,
-        max_timesteps = 10000,  # 20 sec
+        max_timesteps = 2000,  # 20 sec
         xml_file: str = "../assets/quadrotor_x_cfg_payload.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
@@ -579,7 +579,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                   stage=self.stage,
                   traj_type=self.traj_type + " " + str(np.round(self.difficulty, 2)),
                   pos_err=np.round(exP,1),
-                  time=np.round(self.timestep*self.policy_dt,2),
+                  time=np.round(self.time_in_sec,2),
                   rew=np.round(self.total_reward,1)))
             return True
         elif evP > self.vel_err_bound:
@@ -591,7 +591,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                   stage=self.stage,
                   traj_type=self.traj_type + " " + str(np.round(self.difficulty, 2)),
                   vel_err=np.round(evP,1),
-                  time=np.round(self.timestep*self.policy_dt,2),
+                  time=np.round(self.time_in_sec,2),
                   rew=np.round(self.total_reward,1)))
             return True
         elif not(abs(attQ) < pi/2).all():
@@ -603,7 +603,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                   stage=self.stage,
                   traj_type=self.traj_type + " " + str(np.round(self.difficulty, 2)),
                   att=np.round(attQ,1),
-                  time=np.round(self.timestep*self.policy_dt,2),
+                  time=np.round(self.time_in_sec,2),
                   rew=np.round(self.total_reward,1)))
             return True
         elif self.timestep >= self.max_timesteps:

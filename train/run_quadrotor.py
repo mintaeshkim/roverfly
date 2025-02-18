@@ -91,7 +91,7 @@ def main():
     env = VecMonitor(DummyVecEnv([create_env(seed=i) for i in range(num_envs)]))
 
     # Callbacks
-    stop_callback = StopTrainingOnRewardThreshold(reward_threshold=59500, verbose=1)
+    stop_callback = StopTrainingOnRewardThreshold(reward_threshold=2000, verbose=1)
     eval_callback = EvalCallbackWithTimestamp(env,
                                  callback_on_new_best=stop_callback,
                                  eval_freq=2500,

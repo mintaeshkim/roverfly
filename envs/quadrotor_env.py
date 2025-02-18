@@ -32,7 +32,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     
     def __init__(
         self,
-        max_timesteps = 10000,  # 20 sec
+        max_timesteps:int = 10000,  # 20s / (1/500s)
         xml_file: str = "../assets/quadrotor_falcon.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
@@ -51,7 +51,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         #################### DYNAMICS ####################
         ##################################################
         # region
-        self.sim_freq: float       = 500.0
+        self.sim_freq: float       = 500.0 if self.control_scheme == "ctbr" else 100.0
         self.policy_freq: float    = 100.0
         self.sim_dt: float         = 1 / self.sim_freq
         self.policy_dt: float      = 1 / self.policy_freq
@@ -166,7 +166,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # Delay Parameters (From ground station to quadrotor)
         self.delay_range = [0.01, 0.02]  # 10 to 20 ms
         # To simulate the delay for data transmission
-        self.action_queue = deque([[self.data.time, self.action_last]], maxlen=int(self.delay_range[1] / self.policy_dt))
+        self.action_queue_len = int(self.delay_range[1] / self.policy_dt)
+        self.action_queue = deque([] * self.action_queue_len, maxlen=self.action_queue_len)
+        [self.action_queue.append([self.data.time, self.action_last]) for _ in range(self.action_queue_len)]
         # endregion
 
         self.time = 0
@@ -254,16 +256,16 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         """ Set trajectory parameters """
         if self.traj_type == 'setpoint':
-            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
+            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps * self.policy_dt, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
             self.difficulty = self.stage * self.progress["setpoint"]
         if self.traj_type == 'curve':
-            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt,
-                                           ax=choice([-1,1])*3*self.progress["curve"],
-                                           ay=choice([-1,1])*3*self.progress["curve"],
-                                           az=choice([-1,1])*3*self.progress["curve"],
-                                           f1=choice([-1,1])*0.5*self.progress["curve"],
-                                           f2=choice([-1,1])*0.5*self.progress["curve"],
-                                           f3=choice([-1,1])*0.5*self.progress["curve"])
+            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps * self.policy_dt,
+                                           ax=choice([-1,1]) * 3 * self.progress["curve"],
+                                           ay=choice([-1,1]) * 3 * self.progress["curve"],
+                                           az=choice([-1,1]) * 3 * self.progress["curve"],
+                                           f1=choice([-1,1]) * 0.5 * self.progress["curve"],
+                                           f2=choice([-1,1]) * 0.5 * self.progress["curve"],
+                                           f3=choice([-1,1]) * 0.5 * self.progress["curve"])
             self.difficulty = self.stage * self.progress["curve"]
         
         # self.traj.plot()
@@ -275,7 +277,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.aQd = np.zeros((self.max_timesteps + self.history_len, 3))
         for i in range(self.max_timesteps + self.history_len):
             self.xQd[i], self.vQd[i], self.aQd[i] = self.traj.get(i * self.policy_dt)
-        self.x_offset = self.pos_bound * uniform(size=3, low=-1, high=1)
+        self.x_offset = self.pos_bound * (np.array([0, 0, 1]) + uniform(size=3, low=-1, high=1))
         self.xQd += self.x_offset
         self.goal_pos = self.xQd[-1]
 
@@ -296,7 +298,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         qvel = concatenate([vQ, ωQ])
         self.set_state(qpos, qvel)
 
-        self.action = np.array([-1, 0, 0, 0])
+        self.action = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else -0.4768 * np.ones(4)
         self.actual_forces = (self.mQ * self.g / 4) * np.ones(4)
 
         return self._get_obs()
@@ -370,7 +372,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     
     def do_simulation(self, ctrl, n_frames):
         if self.is_delayed:
-            delay_time = uniform(self.delay_range[0], self.delay_range[1])
+            delay_time = uniform(low=self.delay_range[0], high=self.delay_range[1])
             if self.data.time - self.action_queue[0][0] >= delay_time:
                 ctrl = self.action_queue.popleft()[1]
         if self.control_scheme == "ctbr": ctrl = self._ctbr2srt(ctrl)  # CTBR
