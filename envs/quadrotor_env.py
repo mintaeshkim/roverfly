@@ -25,7 +25,7 @@ import time
 import matplotlib.pyplot as plt
 
 
-DEFAULT_CAMERA_CONFIG = {"trackbodyid": 0, "distance": 10.0}
+DEFAULT_CAMERA_CONFIG = {"trackbodyid": 0, "distance": 15.0}
   
 class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     metadata = {"render_modes": ["human", "rgb_array", "depth_array"]}
@@ -101,7 +101,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         ##################### BOUNDS #####################
         ##################################################
         # region
-        self.pos_bound = 6.0
+        self.pos_bound = np.array([3, 3, 6])
         self.vel_bound = 5.0
         self.pos_err_bound = 0.5
         self.vel_err_bound = 2.0
@@ -278,7 +278,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.aQd = np.zeros((self.max_timesteps + self.history_len, 3))
         for i in range(self.max_timesteps + self.history_len):
             self.xQd[i], self.vQd[i], self.aQd[i] = self.traj.get(i * self.policy_dt)
-        self.x_offset = self.pos_bound * (np.array([0, 0, 1]) + uniform(size=3, low=-1, high=1))
+        self.x_offset = self.pos_bound * (uniform(size=3, low=0, high=1))
         self.xQd += self.x_offset
         self.goal_pos = self.xQd[-1]
 
