@@ -504,7 +504,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         exQ = norm(xQ - xQd)
         evQ = norm(vQ - vQd)
 
-        if xQ[3] < 0.05:
+        if xQ[2] < 0.05:
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
             print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Crashed | Time: {time} | Reward: {rew}".format(
