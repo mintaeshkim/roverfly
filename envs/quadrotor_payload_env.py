@@ -313,7 +313,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         qvel = concatenate([vQ, ωQ, self.init_qvel[6:9], vP, ωP, self.init_qvel[15:18]])
         self.set_state(qpos, qvel)
 
-        self.action = np.array([-1, 0, 0, 0])
+        self.action = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else -0.4114 * np.ones(4)
         self.actual_forces = ((self.mP + self.mQ) * self.g / 4) * np.ones(4)
 
         return self._get_obs()
@@ -547,7 +547,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         if self.control_scheme == "ctbr":
             ea = norm(np.array([0.2, 1, 1, 1]) * self.action, ord=2)
         else:
-            ea = norm(self.action + 0.4768 * np.ones(4), ord=2)
+            ea = norm(self.action + 0.4114 * np.ones(4), ord=2)
+            (x + 1) / 2 * 7.5 = 0.9 * 9.81 / 4
 
         rewards = exp(-np.array([scale_xP, scale_vP, scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_a])
                          *np.array([exP, evP, exQ, evQ, eψQ, eωQ, ea]))

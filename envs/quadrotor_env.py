@@ -32,7 +32,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     
     def __init__(
         self,
-        max_timesteps:int = 10000,  # 20s / (1/500s)
+        max_timesteps:int = 2000,  # SRT
         xml_file: str = "../assets/quadrotor_falcon.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
@@ -506,7 +506,19 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         exQ = norm(xQ - xQd)
         evQ = norm(vQ - vQd)
 
-        if exQ > self.pos_err_bound:
+        if xQ[3] < 0.05:
+            self.num_episode += 1
+            self.history_epi[self.traj_type].append(self.timestep)
+            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Crashed | Time: {time} | Reward: {rew}".format(
+                  env_num=self.env_num,
+                  epi=self.num_episode,
+                  stage=self.stage,
+                  traj_type=self.traj_type + " " + str(round(self.difficulty, 2)),
+                  pos_err=round(exQ, 2),
+                  time=round(self.time_in_sec, 2),
+                  rew=round(self.total_reward, 1)))
+            return True
+        elif exQ > self.pos_err_bound:
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
             print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Pos error: {pos_err} | Time: {time} | Reward: {rew}".format(
