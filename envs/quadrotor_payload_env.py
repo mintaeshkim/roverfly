@@ -548,7 +548,6 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             ea = norm(np.array([0.2, 1, 1, 1]) * self.action, ord=2)
         else:
             ea = norm(self.action + 0.4114 * np.ones(4), ord=2)
-            (x + 1) / 2 * 7.5 = 0.9 * 9.81 / 4
 
         rewards = exp(-np.array([scale_xP, scale_vP, scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_a])
                          *np.array([exP, evP, exQ, evQ, eψQ, eωQ, ea]))
