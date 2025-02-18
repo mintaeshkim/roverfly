@@ -100,7 +100,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         ##################### BOUNDS #####################
         ##################################################
         # region
-        self.pos_bound = 3.0
+        self.pos_bound = 6.0
         self.vel_bound = 5.0
         self.pos_err_bound = 0.5
         self.vel_err_bound = 2.0
@@ -167,7 +167,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.delay_range = [0.01, 0.02]  # 10 to 20 ms
         # To simulate the delay for data transmission
         self.action_queue_len = int(self.delay_range[1] / self.policy_dt)
-        self.action_queue = deque([] * self.action_queue_len, maxlen=self.action_queue_len)
+        self.action_queue = deque([None] * self.action_queue_len, maxlen=self.action_queue_len)
         [self.action_queue.append([self.data.time, self.action_last]) for _ in range(self.action_queue_len)]
         # endregion
 
