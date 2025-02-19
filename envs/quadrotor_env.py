@@ -5,7 +5,7 @@ parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.append(os.path.join(parent_dir))
 sys.path.append(os.path.join(parent_dir, 'envs'))
 import numpy as np
-from numpy import abs, clip, concatenate, copy, exp, mean, pi, round, sum, sqrt
+from numpy import abs, arccos, clip, concatenate, copy, exp, mean, pi, round, sum, sqrt
 from numpy.random import choice, uniform, normal
 from numpy.linalg import inv, norm
 from typing import Dict, Union
@@ -73,6 +73,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.is_io_history     = True
         self.is_delayed        = True
         self.is_env_randomized = True
+        self.is_full_traj      = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -90,7 +91,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.d_buffer          = deque(np.zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(np.zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
         self.action_offset     = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else -0.4768 * np.ones(4)
-        self.force_offset      = 1.962 * np.ones(4)
+        self.force_offset      = 1.962 * np.ones(4)  # Warm start
         self.action_last       = self.action_offset
         self.num_episode       = 0
         self.history_epi       = {'setpoint': deque([0]*10, maxlen=10), 'curve': deque([0]*10, maxlen=10)}
@@ -259,10 +260,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         """ Set trajectory parameters """
         if self.traj_type == 'setpoint':
-            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps * self.policy_dt, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
+            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps * self.policy_dt - 4, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
             self.difficulty = self.stage * self.progress["setpoint"]
         if self.traj_type == 'curve':
-            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps * self.policy_dt,
+            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps * self.policy_dt - 4,
                                            ax=choice([-1,1])*3*self.progress["curve"],
                                            ay=choice([-1,1])*3*self.progress["curve"],
                                            az=choice([-1,1])*3*self.progress["curve"],
@@ -270,13 +271,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                                            f2=choice([-1,1])*0.5*self.progress["curve"],
                                            f3=choice([-1,1])*0.5*self.progress["curve"])
             self.difficulty = self.stage * self.progress["curve"]
-        if self.traj_type == 'full':
-            self.traj = ut.FullCrazyTrajectory(tf=20)
-            self.difficulty = 0
-            self.traj_type = 'setpoint'
-        
+        self.traj = ut.FullCrazyTrajectory(tf=20, traj=self.traj)
         # self.traj.plot()
-        # self.traj.plot3d_payload()
+        # self.traj.plot3d()
 
         """ Generate trajectory """
         self._generate_trajectory()
@@ -284,6 +281,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         """ Initial perturbation """
         self._set_initial_perturbation()
 
+        """ Reset action """
         self.action = self.action_offset
         self.actual_forces = self.force_offset
 
@@ -295,7 +293,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.aQd = np.zeros((self.max_timesteps + self.history_len, 3))
         for i in range(self.max_timesteps + self.history_len):
             self.xQd[i], self.vQd[i], self.aQd[i] = self.traj.get(i * self.policy_dt)
-        self.x_offset = self.pos_bound * uniform(size=3, low=0, high=1)
+        self.x_offset = np.array([3 * uniform(low=-1, high=1), 3 * uniform(low=-1, high=1), 0.1 * uniform(low=0, high=1)])
         self.xQd += self.x_offset
         self.goal_pos = self.xQd[-1]
 
@@ -367,6 +365,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # 1. Simulate for Single Time Step
         self.action = action
         if self.is_delayed: self.action_queue.append([self.data.time, self.action])
+        if self.is_full_traj: self._apply_downwash()
         for _ in range(self.num_sims_per_env_step):
             self.do_simulation(self.action, self.frame_skip)  # a_{t}
         if self.render_mode == "human": self.render()
@@ -408,6 +407,13 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.data.actuator("Motor1").ctrl[0] = ctrl[1]  # data.ctrl[2] # back
         self.data.actuator("Motor2").ctrl[0] = ctrl[2]  # data.ctrl[3] # left
         self.data.actuator("Motor3").ctrl[0] = ctrl[3]  # data.ctrl[4] # right
+
+    def _apply_downwash(self):
+        if self.data.qpos[2] < 0.5:
+            theta = uniform(0, 2 * np.pi)
+            phi = uniform(0, np.pi / 2)
+            downwash = np.array([sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi)]) * (0.5 - self.data.qpos[2])
+            self.data.xfrc_applied[self.body_id][:3] = downwash
 
     def _ctbr2srt(self, action):
         zcmd = self.max_thrust * (action[0] + 1) / 2

@@ -870,10 +870,12 @@ class GeometricTrajectoryPayload(Trajectory):
     
 
 class FullCrazyTrajectory(Trajectory):
-    def __init__(self, tf=20):
+    def __init__(self,
+                 tf=20,
+                 traj=CrazyTrajectory(tf=16, ax=2, ay=2, az=2, f1=0.5, f2=0.5, f3=0.5)):
         super().__init__(tf)
         self.takeoff_traj = SmoothTraj5(x0=np.array([0, 0, 0]), xf=np.array([0, 0, 1.5]), tf=2)
-        self.crazy_traj = CrazyTrajectory(tf=self._tf-4, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
+        self.crazy_traj = traj
         self.landing_traj = None
 
     def get(self, t):
@@ -997,6 +999,6 @@ if __name__ == "__main__":
     # traj.plot()
     # traj.plot3d_payload_multiple()
 
-    traj = FullCrazyTrajectory(tf=20)
+    traj = FullCrazyTrajectory(traj=None, tf=20)
     traj.plot()
     traj.plot3d()
