@@ -293,7 +293,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.aQd = np.zeros((self.max_timesteps + self.history_len, 3))
         for i in range(self.max_timesteps + self.history_len):
             self.xQd[i], self.vQd[i], self.aQd[i] = self.traj.get(i * self.policy_dt)
-        self.x_offset = np.array([3 * uniform(low=-1, high=1), 3 * uniform(low=-1, high=1), 0.1 * uniform(low=0, high=1)])
+        self.x_offset = np.array([3 * uniform(low=-1, high=1), 3 * uniform(low=-1, high=1), 0.1])
         self.xQd += self.x_offset
         self.goal_pos = self.xQd[-1]
 
