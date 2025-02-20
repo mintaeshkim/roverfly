@@ -272,11 +272,8 @@ class CrazyTrajectory(Trajectory):
     def __init__(self, tf=30, ax=5, ay=5, az=5, f1=0.5, f2=0.5, f3=0.5):
         super().__init__(tf)
         alpha, beta = 5.0, 5.0
-        # Scale amplitudes using a Beta distribution
         self.ax, self.ay, self.az = [a * np.random.beta(alpha, beta) for a in (ax, ay, az)]
-        # Scale frequencies using a Beta distribution
         self.f1, self.f2, self.f3 = [f * np.random.beta(alpha, beta) for f in (f1, f2, f3)]
-        # Randomly assign phase shifts as either 0 or π
         self.phix, self.phiy, self.phiz = np.random.choice([0, np.pi], size=3)
 
     def window(self, t):
