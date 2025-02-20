@@ -267,41 +267,31 @@ class SmoothSineTraj(SmoothTraj):
 
 
 class CrazyTrajectory(Trajectory):
-    def __init__(self, tf=10, ax=5, ay=5, az=5, f1=0.5, f2=0.5, f3=0.5):
+    def __init__(self, tf=30, ax=5, ay=5, az=5, f1=0.5, f2=0.5, f3=0.5):
         super().__init__(tf)
-        alpha_param, beta_param = 5.0, 5.0
-        self.ax = ax * np.random.beta(alpha_param, beta_param)
-        self.ay = ay * np.random.beta(alpha_param, beta_param)
-        self.az = az * np.random.beta(alpha_param, beta_param)
-        self.f1 = f1 * np.random.beta(alpha_param, beta_param)
-        self.f2 = f2 * np.random.beta(alpha_param, beta_param)
-        self.f3 = f3 * np.random.beta(alpha_param, beta_param)
-        self.phix = np.random.choice([np.pi/2, 3*np.pi/2])
-        self.phiy = np.random.choice([np.pi/2, 3*np.pi/2])
-        self.phiz = np.random.choice([np.pi/2, 3*np.pi/2])
-
-    def get(self, t):
-        w1 = 2 * np.pi * self.f1
-        w2 = 2 * np.pi * self.f2
-        w3 = 2 * np.pi * self.f3
-        x = np.array([
-            self.ax * (1 - np.cos(w1 * t + self.phix)),
-            self.ay * (1 - np.cos(w2 * t + self.phiy)),
-            self.az * (1 - np.cos(w3 * t + self.phiz))
-        ])
-        v = np.array([
-            self.ax * np.sin(w1 * t) * w1,
-            self.ay * np.sin(w2 * t) * w2,
-            self.az * np.sin(w3 * t) * w3
-        ])
-        a = np.array([
-            self.ax * np.cos(w1 * t) * w1 * w1,
-            self.ay * np.cos(w2 * t) * w2 * w2,
-            self.az * np.cos(w3 * t) * w3 * w3
-        ])
+        alpha, beta = 5.0, 5.0
+        self.ax, self.ay, self.az = [a * np.random.beta(alpha, beta) for a in (ax, ay, az)]
+        self.f1, self.f2, self.f3 = [f * np.random.beta(alpha, beta) for f in (f1, f2, f3)]
+        self.phix, self.phiy, self.phiz = np.random.choice([np.pi/2, 3*np.pi/2], size=3)
+    
+    def compute(self, t):
+        w = [2 * np.pi * f for f in (self.f1, self.f2, self.f3)]
+        phases = [self.phix, self.phiy, self.phiz]
+        
+        x = np.array([a * (1 - np.cos(wi * t + phi)) for a, wi, phi in zip((self.ax, self.ay, self.az), w, phases)])
+        v = np.array([a * np.sin(wi * t) * wi for a, wi in zip((self.ax, self.ay, self.az), w)])
+        a = np.array([a * np.cos(wi * t) * wi**2 for a, wi in zip((self.ax, self.ay, self.az), w)])
+        
         return x, v, a
     
+    def get(self, t):
+        if t < 5:
+            return self.compute(0)[0], np.zeros(3), np.zeros(3)
+        elif t > 25:
+            return self.compute(25)[0], np.zeros(3), np.zeros(3)
+        return self.compute(t - 5)
 
+        
 class SmoothTrajClipped(Trajectory):
     def __init__(self, x0, xf, max_velocity=5.0, max_acceleration=10.0):
         self._x0 = np.array(x0)
@@ -871,26 +861,28 @@ class GeometricTrajectoryPayload(Trajectory):
 
 class FullCrazyTrajectory(Trajectory):
     def __init__(self,
-                 tf=20,
-                 traj=CrazyTrajectory(tf=16, ax=2, ay=2, az=2, f1=0.5, f2=0.5, f3=0.5)):
+                 tf=45,
+                 traj=CrazyTrajectory(tf=30, ax=2, ay=2, az=2, f1=0.5, f2=0.5, f3=0.5)):
         super().__init__(tf)
-        self.takeoff_traj = SmoothTraj5(x0=np.array([0, 0, 0]), xf=np.array([0, 0, 1.5]), tf=2)
+        self.takeoff_traj = SmoothTraj5(x0=np.array([0, 0, 0]), xf=np.array([0, 0, 1.5]), tf=5)
         self.crazy_traj = traj
         self.landing_traj = None
+        self.takeoff_time = 5
+        self.landing_time = 35
 
     def get(self, t):
-        if t < 2:  # Takeoff Phase
+        if t < self.takeoff_time:  # Takeoff Phase
             return self.takeoff_traj.get(t)
-        elif t < 18:  # Crazy Trajectory Phase
-            x, v, a = self.crazy_traj.get(t - 2)
+        elif t < self.landing_time:  # Crazy Trajectory Phase
+            x, v, a = self.crazy_traj.get(t - self.takeoff_time)
             x += np.array([0, 0, 1.5])
             return x, v, a
         else:  # Landing Phase
             if self.landing_traj is None:
-                final_pos, _, _ = self.crazy_traj.get(self._tf-4)
+                final_pos, _, _ = self.crazy_traj.get(self.landing_time - self.takeoff_time)
                 final_pos += np.array([0, 0, 1.5])
-                self.landing_traj = SmoothTraj5(x0=final_pos, xf=[final_pos[0], final_pos[1], 0], tf=2)
-            return self.landing_traj.get(t - 18)
+                self.landing_traj = SmoothTraj5(x0=final_pos, xf=[final_pos[0], final_pos[1], 0], tf=self._tf-self.landing_time)
+            return self.landing_traj.get(t - self.landing_time)
 
 
 if __name__ == "__main__":
@@ -999,6 +991,6 @@ if __name__ == "__main__":
     # traj.plot()
     # traj.plot3d_payload_multiple()
 
-    traj = FullCrazyTrajectory(traj=None, tf=20)
+    traj = FullCrazyTrajectory(tf=45, traj=CrazyTrajectory(tf=30, ax=0, ay=0, az=0, f1=0, f2=0, f3=0))
     traj.plot()
     traj.plot3d()

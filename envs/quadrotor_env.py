@@ -32,7 +32,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     
     def __init__(
         self,
-        max_timesteps:int = 2000,  # SRT
+        max_timesteps:int = 4500,  # SRT
         xml_file: str = "../assets/quadrotor_falcon.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
@@ -260,10 +260,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         """ Set trajectory parameters """
         if self.traj_type == 'setpoint':
-            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps * self.policy_dt - 4, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
+            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt-15, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
             self.difficulty = self.stage * self.progress["setpoint"]
         if self.traj_type == 'curve':
-            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps * self.policy_dt - 4,
+            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt-15,
                                            ax=choice([-1,1])*3*self.progress["curve"],
                                            ay=choice([-1,1])*3*self.progress["curve"],
                                            az=choice([-1,1])*3*self.progress["curve"],
@@ -271,7 +271,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                                            f2=choice([-1,1])*0.5*self.progress["curve"],
                                            f3=choice([-1,1])*0.5*self.progress["curve"])
             self.difficulty = self.stage * self.progress["curve"]
-        self.traj = ut.FullCrazyTrajectory(tf=20, traj=self.traj)
+        self.traj = ut.FullCrazyTrajectory(tf=45, traj=self.traj)
         # self.traj.plot()
         # self.traj.plot3d()
 
@@ -293,7 +293,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.aQd = np.zeros((self.max_timesteps + self.history_len, 3))
         for i in range(self.max_timesteps + self.history_len):
             self.xQd[i], self.vQd[i], self.aQd[i] = self.traj.get(i * self.policy_dt)
-        self.x_offset = np.array([3 * uniform(low=-1, high=1), 3 * uniform(low=-1, high=1), 0.1])
+        self.x_offset = np.array([3 * uniform(low=-1, high=1), 3 * uniform(low=-1, high=1), 0])
         self.xQd += self.x_offset
         self.goal_pos = self.xQd[-1]
 
@@ -520,7 +520,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         exQ = norm(xQ - xQd)
         evQ = norm(vQ - vQd)
 
-        if xQ[2] < 0:
+        if 5.0 <= self.time_in_sec <= 35.0 and xQ[2] < 0.01:  # Crash except for takeoff and landing
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
             print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Crashed | Time: {time} | Reward: {rew}".format(
@@ -532,7 +532,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
             return True
-        elif exQ > self.pos_err_bound:
+        elif self.time_in_sec <= 35.0 and exQ > self.pos_err_bound:
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
             print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Pos error: {pos_err} | Time: {time} | Reward: {rew}".format(
@@ -544,7 +544,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
             return True
-        elif evQ > self.vel_err_bound:
+        elif self.time_in_sec <= 35.0 and evQ > self.vel_err_bound:
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
             print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Vel error: {vel_err} | Time: {time} | Reward: {rew}".format(
