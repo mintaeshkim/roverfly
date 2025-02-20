@@ -266,8 +266,6 @@ class SmoothSineTraj(SmoothTraj):
             return x, v, a
 
 
-import numpy as np
-
 class CrazyTrajectory(Trajectory):
     def __init__(self, tf=30, ax=5, ay=5, az=5, f1=0.5, f2=0.5, f3=0.5):
         super().__init__(tf)
@@ -893,29 +891,40 @@ class GeometricTrajectoryPayload(Trajectory):
     
 
 class FullCrazyTrajectory(Trajectory):
-    def __init__(self,
-                 tf=45,
-                 traj=CrazyTrajectory(tf=30, ax=2, ay=2, az=2, f1=0.5, f2=0.5, f3=0.5)):
+    def __init__(self, traj, tf=45):
         super().__init__(tf)
-        self.takeoff_traj = SmoothTraj5(x0=np.array([0, 0, 0]), xf=np.array([0, 0, 1.5]), tf=5)
         self.crazy_traj = traj
-        self.landing_traj = None
-        self.takeoff_time = 5
-        self.landing_time = 35
+        self.takeoff_height = 1.5  # Target height for takeoff and landing
+
+    def quintic_transition(self, t, t_start, t_end, p_start, p_end):
+        """
+        Quintic polynomial transition ensuring zero velocity and zero acceleration at start and end.
+        Provides smooth takeoff and landing.
+        """
+        tau = (t - t_start) / (t_end - t_start)  # Normalize time within the range
+        tau = np.clip(tau, 0, 1)  # Ensure within [0,1]
+
+        # Quintic polynomial coefficients (satisfying boundary conditions)
+        s = 6 * tau**5 - 15 * tau**4 + 10 * tau**3
+        ds = (30 * tau**4 - 60 * tau**3 + 30 * tau**2) / (t_end - t_start)  # First derivative
+        dds = (120 * tau**3 - 180 * tau**2 + 60 * tau) / (t_end - t_start)**2  # Second derivative
+
+        position = (1 - s) * np.array(p_start) + s * np.array(p_end)
+        velocity = ds * (np.array(p_end) - np.array(p_start))
+        acceleration = dds * (np.array(p_end) - np.array(p_start))
+
+        return position, velocity, acceleration
 
     def get(self, t):
-        if t < self.takeoff_time:  # Takeoff Phase
-            return self.takeoff_traj.get(t)
-        elif t < self.landing_time:  # Crazy Trajectory Phase
-            x, v, a = self.crazy_traj.get(t - self.takeoff_time)
-            x += np.array([0, 0, 1.5])
-            return x, v, a
-        else:  # Landing Phase
-            if self.landing_traj is None:
-                final_pos, _, _ = self.crazy_traj.get(self.landing_time - self.takeoff_time)
-                final_pos += np.array([0, 0, 1.5])
-                self.landing_traj = SmoothTraj5(x0=final_pos, xf=[final_pos[0], final_pos[1], 0], tf=self._tf-self.landing_time)
-            return self.landing_traj.get(t - self.landing_time)
+        """Returns position, velocity, and acceleration based on the time step."""
+        if t < 5:
+            return self.quintic_transition(t, 0, 5, [0, 0, 0], [0, 0, self.takeoff_height])
+        elif t < 35:
+            crazy_x, crazy_v, crazy_a = self.crazy_traj.get(t - 5)
+            crazy_x[2] += self.takeoff_height  # Shift trajectory to hover at 1.5m height
+            return crazy_x, crazy_v, crazy_a
+        else:
+            return self.quintic_transition(t, 35, 45, [0, 0, self.takeoff_height], [0, 0, 0])
 
 
 if __name__ == "__main__":
