@@ -266,30 +266,66 @@ class SmoothSineTraj(SmoothTraj):
             return x, v, a
 
 
+import numpy as np
+
 class CrazyTrajectory(Trajectory):
     def __init__(self, tf=30, ax=5, ay=5, az=5, f1=0.5, f2=0.5, f3=0.5):
         super().__init__(tf)
         alpha, beta = 5.0, 5.0
+        # Scale amplitudes using a Beta distribution
         self.ax, self.ay, self.az = [a * np.random.beta(alpha, beta) for a in (ax, ay, az)]
+        # Scale frequencies using a Beta distribution
         self.f1, self.f2, self.f3 = [f * np.random.beta(alpha, beta) for f in (f1, f2, f3)]
-        self.phix, self.phiy, self.phiz = np.random.choice([np.pi/2, 3*np.pi/2], size=3)
-    
+        # Randomly assign phase shifts as either 0 or π
+        self.phix, self.phiy, self.phiz = np.random.choice([0, np.pi], size=3)
+
+    def window(self, t):
+        """Cosine window function for smooth velocity transitions at t=5s and t=25s"""
+        if t < 5 or t > 25:
+            return 0  # Hovering state (no movement)
+        elif 5 <= t < 7.5:
+            return 0.5 * (1 - np.cos(np.pi * (t - 5) / 2.5))  # Smooth transition start
+        elif 22.5 < t <= 25:
+            return 0.5 * (1 - np.cos(np.pi * (25 - t) / 2.5))  # Smooth transition end
+        return 1  # Full trajectory motion
+
+    def d_window(self, t):
+        """Derivative of the window function for velocity adjustment"""
+        if 5 <= t < 7.5:
+            return 0.5 * (np.pi / 2.5) * np.sin(np.pi * (t - 5) / 2.5)
+        elif 22.5 < t <= 25:
+            return -0.5 * (np.pi / 2.5) * np.sin(np.pi * (25 - t) / 2.5)
+        return 0  # No change in hovering state
+
     def compute(self, t):
-        w = [2 * np.pi * f for f in (self.f1, self.f2, self.f3)]
+        """Compute position, velocity, and acceleration at time t"""
+        w = [2 * np.pi * f for f in (self.f1, self.f2, self.f3)]  # Convert frequencies to angular velocities
         phases = [self.phix, self.phiy, self.phiz]
-        
-        x = np.array([a * (1 - np.cos(wi * t + phi)) for a, wi, phi in zip((self.ax, self.ay, self.az), w, phases)])
-        v = np.array([a * np.sin(wi * t) * wi for a, wi in zip((self.ax, self.ay, self.az), w)])
-        a = np.array([a * np.cos(wi * t) * wi**2 for a, wi in zip((self.ax, self.ay, self.az), w)])
+        win = self.window(t)
+        d_win = self.d_window(t)
+
+        # Compute position
+        x = np.array([win * a * np.sin(wi * t + phi) for a, wi, phi in zip((self.ax, self.ay, self.az), w, phases)])
+        # Compute velocity with window function scaling
+        v = np.array([
+            win * a * np.cos(wi * t + phi) * wi + d_win * a * np.sin(wi * t + phi)
+            for a, wi, phi in zip((self.ax, self.ay, self.az), w, phases)
+        ])
+        # Compute acceleration with second derivative adjustments
+        a = np.array([
+            win * (-a * np.sin(wi * t + phi) * wi**2) + 2 * d_win * a * np.cos(wi * t + phi) * wi
+            for a, wi, phi in zip((self.ax, self.ay, self.az), w, phases)
+        ])
         
         return x, v, a
-    
+
     def get(self, t):
+        """Return the desired state at time t, maintaining hovering outside the trajectory range"""
         if t < 5:
-            return self.compute(0)[0], np.zeros(3), np.zeros(3)
+            return self.compute(0)[0], np.zeros(3), np.zeros(3)  # Maintain hovering at the initial position
         elif t > 25:
-            return self.compute(25)[0], np.zeros(3), np.zeros(3)
-        return self.compute(t - 5)
+            return self.compute(25)[0], np.zeros(3), np.zeros(3)  # Maintain hovering at the final position
+        return self.compute(t)
 
         
 class SmoothTrajClipped(Trajectory):
@@ -991,6 +1027,6 @@ if __name__ == "__main__":
     # traj.plot()
     # traj.plot3d_payload_multiple()
 
-    traj = FullCrazyTrajectory(tf=45, traj=CrazyTrajectory(tf=30, ax=0, ay=0, az=0, f1=0, f2=0, f3=0))
+    traj = FullCrazyTrajectory(tf=45, traj=CrazyTrajectory(tf=30, ax=1, ay=1, az=1, f1=0.5, f2=0.5, f3=0.5))
     traj.plot()
     traj.plot3d()
