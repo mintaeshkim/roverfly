@@ -890,149 +890,74 @@ class GeometricTrajectoryPayload(Trajectory):
         return x, v, a, da, d2a, d3a, d4a, q, dq, d2q, d3q, d4q
     
 
+""" TEST """
+# region
+# class FullCrazyTrajectory(Trajectory):
+#     def __init__(self, traj, tf=45):
+#         super().__init__(tf)
+#         self.crazy_traj = traj
+#         self.takeoff_height = 1.5  # Target height for takeoff and landing
+
+#     def quintic_transition(self, t, t_start, t_end, p_start, p_end):
+#         """
+#         Quintic polynomial transition ensuring zero velocity and zero acceleration at start and end.
+#         Provides smooth takeoff and landing.
+#         """
+#         tau = (t - t_start) / (t_end - t_start)  # Normalize time within the range
+#         tau = np.clip(tau, 0, 1)  # Ensure within [0,1]
+
+#         # Quintic polynomial coefficients (satisfying boundary conditions)
+#         s = 6 * tau**5 - 15 * tau**4 + 10 * tau**3
+#         ds = (30 * tau**4 - 60 * tau**3 + 30 * tau**2) / (t_end - t_start)  # First derivative
+#         dds = (120 * tau**3 - 180 * tau**2 + 60 * tau) / (t_end - t_start)**2  # Second derivative
+
+#         position = (1 - s) * np.array(p_start) + s * np.array(p_end)
+#         velocity = ds * (np.array(p_end) - np.array(p_start))
+#         acceleration = dds * (np.array(p_end) - np.array(p_start))
+
+#         return position, velocity, acceleration
+
+#     def get(self, t):
+#         """Returns position, velocity, and acceleration based on the time step."""
+#         if t < 5:
+#             return self.quintic_transition(t, 0, 5, [0, 0, 0], [0, 0, self.takeoff_height])
+#         elif t < 35:
+#             crazy_x, crazy_v, crazy_a = self.crazy_traj.get(t - 5)
+#             crazy_x[2] += self.takeoff_height  # Shift trajectory to hover at 1.5m height
+#             return crazy_x, crazy_v, crazy_a
+#         else:
+#             return self.quintic_transition(t, 35, 45, [0, 0, self.takeoff_height], [0, 0, 0])
+# endregion
+
+
 class FullCrazyTrajectory(Trajectory):
-    def __init__(self, traj, tf=45):
+    def __init__(self,
+                 traj=CrazyTrajectory(tf=30, ax=0, ay=0, az=0, f1=0, f2=0, f3=0),
+                 tf=45):
         super().__init__(tf)
+        self.takeoff_traj = SmoothTraj5(x0=np.array([0, 0, 0]), xf=np.array([0, 0, 1.5]), tf=5)
         self.crazy_traj = traj
-        self.takeoff_height = 1.5  # Target height for takeoff and landing
-
-    def quintic_transition(self, t, t_start, t_end, p_start, p_end):
-        """
-        Quintic polynomial transition ensuring zero velocity and zero acceleration at start and end.
-        Provides smooth takeoff and landing.
-        """
-        tau = (t - t_start) / (t_end - t_start)  # Normalize time within the range
-        tau = np.clip(tau, 0, 1)  # Ensure within [0,1]
-
-        # Quintic polynomial coefficients (satisfying boundary conditions)
-        s = 6 * tau**5 - 15 * tau**4 + 10 * tau**3
-        ds = (30 * tau**4 - 60 * tau**3 + 30 * tau**2) / (t_end - t_start)  # First derivative
-        dds = (120 * tau**3 - 180 * tau**2 + 60 * tau) / (t_end - t_start)**2  # Second derivative
-
-        position = (1 - s) * np.array(p_start) + s * np.array(p_end)
-        velocity = ds * (np.array(p_end) - np.array(p_start))
-        acceleration = dds * (np.array(p_end) - np.array(p_start))
-
-        return position, velocity, acceleration
+        self.landing_traj = None
+        self.takeoff_time = 5
+        self.landing_time = 35
 
     def get(self, t):
-        """Returns position, velocity, and acceleration based on the time step."""
-        if t < 5:
-            return self.quintic_transition(t, 0, 5, [0, 0, 0], [0, 0, self.takeoff_height])
-        elif t < 35:
-            crazy_x, crazy_v, crazy_a = self.crazy_traj.get(t - 5)
-            crazy_x[2] += self.takeoff_height  # Shift trajectory to hover at 1.5m height
-            return crazy_x, crazy_v, crazy_a
-        else:
-            return self.quintic_transition(t, 35, 45, [0, 0, self.takeoff_height], [0, 0, 0])
+        if t < self.takeoff_time:  # Takeoff Phase
+            return self.takeoff_traj.get(t)
+        elif t < self.landing_time:  # Crazy Trajectory Phase
+            x, v, a = self.crazy_traj.get(t - self.takeoff_time)
+            x += np.array([0, 0, 1.5])
+            return x, v, a
+        else:  # Landing Phase
+            if self.landing_traj is None:
+                final_pos, _, _ = self.crazy_traj.get(self.landing_time - self.takeoff_time)
+                final_pos += np.array([0, 0, 1.5])
+                self.landing_traj = SmoothTraj5(x0=final_pos, xf=[final_pos[0], final_pos[1], 0], tf=self._tf-self.landing_time)
+            return self.landing_traj.get(t - self.landing_time)
 
 
 if __name__ == "__main__":
-
-    # Example usage of different trajectories
-    # traj = Setpoint(np.array([-10, -10, 2]))
-    # traj.plot()
-
-    # traj = SmoothTraj3(x0=np.array([0, 0, 2]), xf=np.array([3, 0, 2]), tf=10)
-    # traj.plot()
-
-    # traj = SmoothTraj5(x0=np.array([-1, -1, -1]), xf=np.array([1, 1, 1]), tf=10)
-    # traj.plot()
-    # traj = SmoothTraj5(x0=np.array([0, 0, 0]), xf=np.array([10, 0, 0]), tf=100)
-    # traj.plot()
-
-    # traj = CircularTraj(r=5, origin=np.zeros(3), w=2*np.pi*0.2, tf=10)
-    # traj.plot()
-    # traj.plot3d()
-
-    # traj = SmoothSineTraj(x0=np.array([0, 0, 0]), xf=np.array([1, 1, 1]), tf=20)
-    # traj.plot()
-    # traj.plot3d()
-
-    # traj = SmoothTrajClipped(x0=np.array([3,4,0]), xf=np.array([0,0,0]), max_velocity=5.0, max_acceleration=10.0)
-    # print(traj._tf)
-    # traj.plot()
-
-    # for _ in range(10):
-    #     progress = 0.8
-    #     traj = CrazyTrajectoryPayload(tf=10,
-    #                                   ax=5*progress,
-    #                                   ay=5*progress,
-    #                                   az=5*progress,
-    #                                   f1=-0.4*progress,
-    #                                   f2=0.4*progress,
-    #                                   f3=0.4*progress)
-    #     traj.plot()
-    #     traj.plot3d_payload()
-
-    # for _ in range(10):
-    #     progress = 0.8
-    #     x0 = random_point_on_sphere(2)
-    #     xf = np.zeros(3)
-    #     traj = CustomTrajectoryPayloadWindow(x0=x0, xf=xf, tf=10)
-    #     traj.plot()
-    #     traj.plot3d_payload()
-    
-    # for _ in range(10):
-    #     progress = 0.8
-    #     x0 = random_point_on_sphere(0.2)
-    #     xf = np.zeros(3)
-    #     traj = SmoothTraj5Payload(x0=x0, xf=xf, tf=10)
-    #     traj.plot()
-    #     traj.plot3d_payload()
-    
-    # radius = np.random.uniform(0.5,1.0)
-    # progress = 0.5
-    # frequency = progress * np.random.beta(5.0, 2.0) / 2
-    # # omega = np.min([2 * np.pi * frequency, v_max/radius])
-    # omega = 2 * np.pi * frequency
-    
-    # print("Frequency: ", frequency)
-    # print("Velocity: ", radius*omega)
-    # traj = CircularTrajPayload(r=radius, origin=np.zeros(3), w=omega, tf=10)
-    # traj.plot()
-    # traj.plot3d_payload()
-
-    # x0 = [0, 0, 0.5]
-    # xf = [1, 0, 0]
-    # tf = 20
-    # max_velocity = 3.0
-    # max_acceleration = 5.0
-    # trajectory = SmoothTraj5Payload(x0=x0, xf=xf, tf=3)
-    # trajectory = SmoothTraj5PayloadClipped(x0=x0, xf=xf, max_velocity=max_velocity, max_acceleration=max_acceleration, tf=10)
-
-    # trajectory.plot()
-    # trajectory.plot3d_payload()
-
-    # x0 = [0, 0, 0]
-    # xf = [9, 0, 0]
-    # traj = SmoothCustomTrajPayload(x0=x0, xf=xf, tf=7)
-    # traj.plot()
-    # traj.plot3d_payload()
-
-    # traj = CrazyTrajectoryPayloadWindow(tf=2,
-    #                                     ax=1,
-    #                                     ay=0,
-    #                                     az=0.5,
-    #                                     f1=0.25,
-    #                                     f2=0,
-    #                                     f3=0.125)
-
-    # traj = CustomTrajectoryPayloadWindow(tf=5)
-    # traj.plot()
-    # print(traj.get(10)[0])
-    # traj.plot3d_payload()
-
-    # traj = CrazyTrajectoryPayloadMultiple(tf=10,
-    #                                       ax=np.random.choice([-1,1])*5*0.5,
-    #                                       ay=np.random.choice([-1,1])*5*0.5,
-    #                                       az=np.random.choice([-1,1])*5*0.5,
-    #                                       f1=np.random.choice([-1,1])*0.5*0.5,
-    #                                       f2=np.random.choice([-1,1])*0.5*0.5,
-    #                                       f3=np.random.choice([-1,1])*0.5*0.5)
-    # traj.plot()
-    # traj.plot3d_payload_multiple()
-
-    traj = FullCrazyTrajectory(tf=45, traj=CrazyTrajectory(tf=30, ax=1, ay=1, az=1, f1=0.5, f2=0.5, f3=0.5))
+    # traj = FullCrazyTrajectory(tf=45, traj=CrazyTrajectory(tf=30, ax=1, ay=1, az=1, f1=0.5, f2=0.5, f3=0.5))
+    traj = FullCrazyTrajectory(tf=45, traj=CrazyTrajectory(tf=30, ax=0, ay=0, az=0, f1=0, f2=0, f3=0))
     traj.plot()
     traj.plot3d()

@@ -532,7 +532,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
             return True
-        elif self.time_in_sec <= 35.0 and exQ > self.pos_err_bound:
+        if self.time_in_sec <= 35.0 and exQ > self.pos_err_bound:
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
             print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Pos error: {pos_err} | Time: {time} | Reward: {rew}".format(
