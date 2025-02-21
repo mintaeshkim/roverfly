@@ -105,7 +105,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # region
         self.pos_bound = np.array([3.0, 3.0, 6.0])
         self.vel_bound = 5.0
-        self.pos_err_bound = 0.5
+        self.pos_err_bound = 0.5  # 5.0
         self.vel_err_bound = 2.0
         # endregion
         ##################################################
@@ -167,7 +167,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.actual_forces = self.force_offset
 
         # Delay Parameters (From ground station to quadrotor)
-        self.delay_range = [0.01, 0.02]  # 10 to 20 ms
+        self.delay_range = [0.01, 0.03]  # 10 to 30 ms
         # To simulate the delay for data transmission
         self.action_queue_len = int(self.delay_range[1] / self.policy_dt)
         self.action_queue = deque([None] * self.action_queue_len, maxlen=self.action_queue_len)
@@ -255,8 +255,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         """ TEST """
         # self.stage = 2
-        self.traj_type = 'setpoint'
-        # self.traj_type = 'full'
+        # self.traj_type = 'setpoint'
 
         """ Set trajectory parameters """
         if self.traj_type == 'setpoint':
