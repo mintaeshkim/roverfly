@@ -982,8 +982,5 @@ if __name__ == "__main__":
     # traj.plot()
     # traj.plot3d()
 
-    # smooth_traj = SmoothTraj5(x0=np.array([0,0,0]), xf=np.array([0,0,1]), tf=5)
-    # smooth_traj.plot()
-
-    # quintic_traj = QuinticTrajectory(x0=np.array([0,0,0]), xf=np.array([0,0,1]), tf=5)
-    # quintic_traj.plot()
+    crazy_traj = CrazyTrajectory()
+    crazy_traj.plot()

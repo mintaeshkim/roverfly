@@ -61,9 +61,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         ###################### TIME ######################
         ##################################################
         # region
-        self.max_timesteps: int = max_timesteps
-        self.timestep: int      = 0
-        self.time_in_sec: float = 0.0
+        self.max_timesteps: int  = max_timesteps
+        self.timestep: int       = 0
+        self.time_in_sec: float  = 0.0
+        self.traj_timesteps: int = 3000
         # endregion
         ##################################################
         #################### BOOLEANS ####################
@@ -73,7 +74,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.is_io_history     = True
         self.is_delayed        = True
         self.is_env_randomized = True
-        self.is_full_traj      = True
+        self.is_full_traj      = False
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -90,8 +91,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer          = deque(np.zeros((self.history_len, self.s_dim)), maxlen=self.history_len)  # [x, R, v, ω]
         self.d_buffer          = deque(np.zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(np.zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
-        self.action_offset     = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else -0.45391 * np.ones(4)
-        self.force_offset      = 2.0478375 * np.ones(4)  # Warm start
+        self.action_offset     = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else -0.46 * np.ones(4)
+        self.force_offset      = 2.0 * np.ones(4)  # Warm start
         self.action_last       = self.action_offset
         self.num_episode       = 0
         self.history_epi       = {'setpoint': deque([0]*10, maxlen=10), 'curve': deque([0]*10, maxlen=10)}
@@ -237,6 +238,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         #                                 num_sims_per_env_step=self.num_sims_per_env_step)
 
     def _reset_model(self):
+        if not self.is_full_traj: self.max_timesteps = self.traj_timesteps
+        
         """ Compute progress """
         self.progress['setpoint'] = (mean(self.history_epi['setpoint']) / self.max_timesteps)
         self.progress['curve'] = (mean(self.history_epi['curve']) / self.max_timesteps)
@@ -259,10 +262,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         """ Set trajectory parameters """
         if self.traj_type == 'setpoint':
-            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt-15, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
+            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
             self.difficulty = self.stage * self.progress["setpoint"]
         if self.traj_type == 'curve':
-            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt-15,
+            self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt,
                                            ax=choice([-1,1])*3*self.progress["curve"],
                                            ay=choice([-1,1])*3*self.progress["curve"],
                                            az=choice([-1,1])*3*self.progress["curve"],
@@ -270,7 +273,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                                            f2=choice([-1,1])*0.5*self.progress["curve"],
                                            f3=choice([-1,1])*0.5*self.progress["curve"])
             self.difficulty = self.stage * self.progress["curve"]
-        self.traj = ut.FullCrazyTrajectory(tf=45, traj=self.traj)
+            
+        if self.is_full_traj: self.traj = ut.FullCrazyTrajectory(tf=45, traj=self.traj)
         # self.traj.plot()
         # self.traj.plot3d()
 
@@ -278,7 +282,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self._generate_trajectory()
 
         """ Initial perturbation """
-        self._set_initial_perturbation()
+        self._set_initial_state()
 
         """ Reset action """
         self.action = self.action_offset
@@ -292,11 +296,14 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.aQd = np.zeros((self.max_timesteps + self.history_len, 3))
         for i in range(self.max_timesteps + self.history_len):
             self.xQd[i], self.vQd[i], self.aQd[i] = self.traj.get(i * self.policy_dt)
-        self.x_offset = np.array([3 * uniform(low=-1, high=1), 3 * uniform(low=-1, high=1), 0])
+        if self.is_full_traj:
+            self.x_offset = np.array([3 * uniform(low=-1, high=1), 3 * uniform(low=-1, high=1), 0])
+        else:
+            self.x_offset = np.array([3 * uniform(low=-1, high=1), 3 * uniform(low=-1, high=1), 6 * uniform(low=0, high=1)])
         self.xQd += self.x_offset
         self.goal_pos = self.xQd[-1]
 
-    def _set_initial_perturbation(self):
+    def _set_initial_state(self):
         self.perturbation = self.progress[self.traj_type]
 
         wx = 0.05 * uniform(0, self.perturbation)
