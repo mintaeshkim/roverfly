@@ -19,7 +19,7 @@
         
         <body name="quadrotor" pos="0 0 0">
             <site name="body_frame" pos="0 0 0" quat="1 0 0 0"/>
-            <inertial pos="0 0 0" mass="0.8" diaginertia="0.0049 0.0053 0.0098" />
+            <inertial pos="0 0 0" mass="0.835" diaginertia="0.0049 0.0053 0.0098" />
             <joint name="root" type="free" damping="0" armature="0" pos="0 0 0" limited="false" />
 
             <body name="core" pos="0 0 0">

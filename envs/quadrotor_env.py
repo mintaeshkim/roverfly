@@ -90,8 +90,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer          = deque(np.zeros((self.history_len, self.s_dim)), maxlen=self.history_len)  # [x, R, v, ω]
         self.d_buffer          = deque(np.zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(np.zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
-        self.action_offset     = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else -0.4768 * np.ones(4)
-        self.force_offset      = 1.962 * np.ones(4)  # Warm start
+        self.action_offset     = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else -0.45391 * np.ones(4)
+        self.force_offset      = 2.0478375 * np.ones(4)  # Warm start
         self.action_last       = self.action_offset
         self.num_episode       = 0
         self.history_epi       = {'setpoint': deque([0]*10, maxlen=10), 'curve': deque([0]*10, maxlen=10)}
@@ -137,7 +137,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         ##################################################
         # region
         # Quadrotor Characteristic Values
-        self.mQ = 0.8
+        self.mQ = 0.835
         self.mP = 0.1
         self.g = 9.81
         self.JQ = np.array([[0.49, 0, 0],
@@ -147,9 +147,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.d = self.l / sqrt(2)
         self.κ = 0.025
         self.A = inv(np.array([[1, 1, 1, 1],
-                                         [self.d, -self.d, -self.d, self.d],
-                                         [-self.d, -self.d, self.d, self.d],
-                                         [-self.κ, self.κ, -self.κ, self.κ]]))
+                               [self.d, -self.d, -self.d, self.d],
+                               [-self.d, -self.d, self.d, self.d],
+                               [-self.κ, self.κ, -self.κ, self.κ]]))
         
         # PID Control
         self.kPdφ, self.kPdθ, self.kPdψ = 1.0, 1.0, 0.8
@@ -167,7 +167,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.actual_forces = self.force_offset
 
         # Delay Parameters (From ground station to quadrotor)
-        self.delay_range = [0.01, 0.03]  # 10 to 30 ms
+        self.delay_range = [0.01, 0.02]  # 10 to 20 ms
         # To simulate the delay for data transmission
         self.action_queue_len = int(self.delay_range[1] / self.policy_dt)
         self.action_queue = deque([None] * self.action_queue_len, maxlen=self.action_queue_len)
