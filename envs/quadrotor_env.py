@@ -51,7 +51,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         #################### DYNAMICS ####################
         ##################################################
         # region
-        self.sim_freq: float       = 500.0 if self.control_scheme == "ctbr" else 100.0
+        self.sim_freq: float       = 500.0 if self.control_scheme == "ctbr" else 1000.0
         self.policy_freq: float    = 100.0
         self.sim_dt: float         = 1 / self.sim_freq
         self.policy_dt: float      = 1 / self.policy_freq
@@ -106,7 +106,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # region
         self.pos_bound = np.array([3.0, 3.0, 6.0])
         self.vel_bound = 5.0
-        self.pos_err_bound = 0.5  # 5.0
+        self.pos_err_bound = 5.0  # 5.0
         self.vel_err_bound = 2.0
         # endregion
         ##################################################
@@ -239,14 +239,14 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
     def _reset_model(self):
         if not self.is_full_traj: self.max_timesteps = self.traj_timesteps
-        
+
         """ Compute progress """
         self.progress['setpoint'] = (mean(self.history_epi['setpoint']) / self.max_timesteps)
         self.progress['curve'] = (mean(self.history_epi['curve']) / self.max_timesteps)
         
         """ TEST """
         # self.progress['setpoint'] = 1.0
-        # self.progress['curve'] = 0.35
+        # self.progress['curve'] = 0.5
 
         """ Choose task """
         if self.progress['setpoint'] < 0.5:
@@ -258,7 +258,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         """ TEST """
         # self.stage = 2
-        # self.traj_type = 'setpoint'
+        # self.traj_type = 'curve'
 
         """ Set trajectory parameters """
         if self.traj_type == 'setpoint':
@@ -503,7 +503,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         evQ = norm(self.evQ, ord=2)
         eψQ = abs(ψQ - ψQd)
         eωQ = norm(self.ω, ord=2)
-        ea = norm(self.action - self.action_offset, ord=2)
+        ea = norm(self.action, ord=2)
 
         rewards = exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_a])
                       *np.array([exQ, evQ, eψQ, eωQ, ea]))

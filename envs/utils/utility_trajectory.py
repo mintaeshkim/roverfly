@@ -916,64 +916,64 @@ class QuinticTrajectory(Trajectory):
 
 """ TEST """
 # region
-# class FullCrazyTrajectory(Trajectory):
-#     def __init__(self, traj, tf=45):
-#         """
-#         Full trajectory that includes:
-#         1. Smooth takeoff (0-5s) using a QuinticTrajectory.
-#         2. Crazy trajectory (5-35s).
-#         3. Smooth landing (35-45s) using a QuinticTrajectory.
+class FullCrazyTrajectory(Trajectory):
+    def __init__(self, traj, tf=45):
+        """
+        Full trajectory that includes:
+        1. Smooth takeoff (0-5s) using a QuinticTrajectory.
+        2. Crazy trajectory (5-35s).
+        3. Smooth landing (35-45s) using a QuinticTrajectory.
 
-#         Args:
-#             traj (Trajectory): An instance of CrazyTrajectory.
-#             tf (float): Total duration of the trajectory (default: 45s).
-#         """
-#         super().__init__(tf)
-#         self.crazy_traj = traj
-#         self.takeoff_height = 1.5  # Target height for takeoff and landing
+        Args:
+            traj (Trajectory): An instance of CrazyTrajectory.
+            tf (float): Total duration of the trajectory (default: 45s).
+        """
+        super().__init__(tf)
+        self.crazy_traj = traj
+        self.takeoff_height = 1.5  # Target height for takeoff and landing
 
-#         # Define takeoff and landing trajectories using QuinticTrajectory
-#         self.takeoff_traj = QuinticTrajectory(tf=5, x0=np.array([0, 0, 0]), xf=np.array([0, 0, self.takeoff_height]))
-#         self.landing_traj = QuinticTrajectory(tf=10, x0=np.array([0, 0, self.takeoff_height]), xf=np.array([0, 0, 0]))
+        # Define takeoff and landing trajectories using QuinticTrajectory
+        self.takeoff_traj = QuinticTrajectory(tf=5, x0=np.array([0, 0, 0]), xf=np.array([0, 0, self.takeoff_height]))
+        self.landing_traj = QuinticTrajectory(tf=10, x0=np.array([0, 0, self.takeoff_height]), xf=np.array([0, 0, 0]))
 
-#     def get(self, t):
-#         if t < 5:
-#             return self.takeoff_traj.get(t)  # Takeoff phase
-#         elif t < 35:
-#             crazy_x, crazy_v, crazy_a = self.crazy_traj.get(t - 5)
-#             crazy_x[2] += self.takeoff_height  # Shift trajectory to hover at 1.5m height
-#             return crazy_x, crazy_v, crazy_a
-#         else:
-#             return self.landing_traj.get(t - 35)  # Landing phase
+    def get(self, t):
+        if t < 5:
+            return self.takeoff_traj.get(t)  # Takeoff phase
+        elif t < 35:
+            crazy_x, crazy_v, crazy_a = self.crazy_traj.get(t - 5)
+            crazy_x[2] += self.takeoff_height  # Shift trajectory to hover at 1.5m height
+            return crazy_x, crazy_v, crazy_a
+        else:
+            return self.landing_traj.get(t - 35)  # Landing phase
 # endregion
 
 
 """ TRAIN """
 # region
-class FullCrazyTrajectory(Trajectory):
-    def __init__(self,
-                 traj=CrazyTrajectory(tf=30, ax=0, ay=0, az=0, f1=0, f2=0, f3=0),
-                 tf=45):
-        super().__init__(tf)
-        self.takeoff_traj = SmoothTraj5(x0=np.array([0, 0, 0]), xf=np.array([0, 0, 1.5]), tf=5)
-        self.crazy_traj = traj
-        self.landing_traj = None
-        self.takeoff_time = 5
-        self.landing_time = 35
+# class FullCrazyTrajectory(Trajectory):
+#     def __init__(self,
+#                  traj=CrazyTrajectory(tf=30, ax=0, ay=0, az=0, f1=0, f2=0, f3=0),
+#                  tf=45):
+#         super().__init__(tf)
+#         self.takeoff_traj = SmoothTraj5(x0=np.array([0, 0, 0]), xf=np.array([0, 0, 1.5]), tf=5)
+#         self.crazy_traj = traj
+#         self.landing_traj = None
+#         self.takeoff_time = 5
+#         self.landing_time = 35
 
-    def get(self, t):
-        if t < self.takeoff_time:  # Takeoff Phase
-            return self.takeoff_traj.get(t)
-        elif t < self.landing_time:  # Crazy Trajectory Phase
-            x, v, a = self.crazy_traj.get(t - self.takeoff_time)
-            x += np.array([0, 0, 1.5])
-            return x, v, a
-        else:  # Landing Phase
-            if self.landing_traj is None:
-                final_pos, _, _ = self.crazy_traj.get(self.landing_time - self.takeoff_time)
-                final_pos += np.array([0, 0, 1.5])
-                self.landing_traj = SmoothTraj5(x0=final_pos, xf=[final_pos[0], final_pos[1], 0], tf=self._tf-self.landing_time)
-            return self.landing_traj.get(t - self.landing_time)
+#     def get(self, t):
+#         if t < self.takeoff_time:  # Takeoff Phase
+#             return self.takeoff_traj.get(t)
+#         elif t < self.landing_time:  # Crazy Trajectory Phase
+#             x, v, a = self.crazy_traj.get(t - self.takeoff_time)
+#             x += np.array([0, 0, 1.5])
+#             return x, v, a
+#         else:  # Landing Phase
+#             if self.landing_traj is None:
+#                 final_pos, _, _ = self.crazy_traj.get(self.landing_time - self.takeoff_time)
+#                 final_pos += np.array([0, 0, 1.5])
+#                 self.landing_traj = SmoothTraj5(x0=final_pos, xf=[final_pos[0], final_pos[1], 0], tf=self._tf-self.landing_time)
+#             return self.landing_traj.get(t - self.landing_time)
 # endregion
 
 if __name__ == "__main__":

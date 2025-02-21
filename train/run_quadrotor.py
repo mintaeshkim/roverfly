@@ -138,11 +138,11 @@ def main():
 
     model = PPO('MlpPolicy',  # CustomActorCriticPolicy,
                 env=env,
-                learning_rate=3e-4,
-                n_steps=n_steps, # 2048  |  The number of steps to run for each environment per update / 2048 if dt=0.001 / 2048*16 if dt=0.01
-                batch_size=batch_size, # 512*num_cpu  |  *16 if dt=0.01
+                learning_rate=1e-4,
+                n_steps=n_steps, # 2048
+                batch_size=batch_size, # 512*num_cpu
                 gamma=0.99,
-                gae_lambda=0.95,  # 0.95
+                gae_lambda=0.95,
                 clip_range=linear_schedule(0.2),
                 ent_coef=0.02, # Makes PPO explore
                 verbose=1,
