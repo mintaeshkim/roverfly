@@ -74,6 +74,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.is_io_history     = True
         self.is_delayed        = True
         self.is_env_randomized = True
+        self.is_disturbance    = True
         self.is_full_traj      = False
         # endregion
         ##################################################
@@ -106,7 +107,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # region
         self.pos_bound = np.array([3.0, 3.0, 6.0])
         self.vel_bound = 5.0
-        self.pos_err_bound = 5.0  # 5.0
+        self.pos_err_bound = 0.5  # 5.0
         self.vel_err_bound = 2.0
         # endregion
         ##################################################
@@ -168,12 +169,16 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.actual_forces = self.force_offset
 
         # Delay Parameters (From ground station to quadrotor)
-        self.delay_range = [0.01, 0.02]  # 10 to 20 ms
+        self.delay_range = [0.01, 0.04]  # 10 to 20 ms
         # To simulate the delay for data transmission
-        self.action_queue_len = int(self.delay_range[1] / self.policy_dt)
+        self.action_queue_len = int(self.delay_range[1] / self.policy_dt) + 1
+        self.delay_time = uniform(low=self.delay_range[0], high=self.delay_range[1])
         self.action_queue = deque([None] * self.action_queue_len, maxlen=self.action_queue_len)
         [self.action_queue.append([self.data.time, self.action_last]) for _ in range(self.action_queue_len)]
         # endregion
+
+        self.disturbance_duration = 0
+        self.disturbance_start = 0
 
         self.time = 0
 
@@ -275,6 +280,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             self.difficulty = self.stage * self.progress["curve"]
             
         if self.is_full_traj: self.traj = ut.FullCrazyTrajectory(tf=45, traj=self.traj)
+
         # self.traj.plot()
         # self.traj.plot3d()
 
@@ -372,7 +378,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.action = action
         if self.is_delayed: self.action_queue.append([self.data.time, self.action])
         if self.is_full_traj: self._apply_downwash()
+        if self.is_disturbance: self._apply_disturbance()
         for _ in range(self.num_sims_per_env_step):
+            action_apply = self._action_delay() if self.is_delayed else self.action
             self.do_simulation(self.action, self.frame_skip)  # a_{t}
         if self.render_mode == "human": self.render()
         # 2. Get Observation
@@ -383,16 +391,21 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # 4. Termination / Truncation
         terminated = self._terminated()
         truncated = self._truncated()
+        self.info["terminated"] = terminated
         # 5. Update Data
         self._update_data(reward=reward, step=True)
 
-        return obs_full, reward, terminated, truncated, {}
+        return obs_full, reward, terminated, truncated, self.info
     
+    def _action_delay(self):
+        if self.data.time - self.action_queue[0][0] >= self.delay_time:
+            action_delayed = self.action_queue.popleft()[1]
+            self.delay_time = uniform(low=self.delay_range[0], high=self.delay_range[1])
+        else:
+            action_delayed = self.action_queue[0][1]
+        return action_delayed
+
     def do_simulation(self, ctrl, n_frames):
-        if self.is_delayed:
-            delay_time = uniform(low=self.delay_range[0], high=self.delay_range[1])
-            if self.data.time - self.action_queue[0][0] >= delay_time:
-                ctrl = self.action_queue.popleft()[1]
         if self.control_scheme == "ctbr": ctrl = self._ctbr2srt(ctrl)  # CTBR
         else: ctrl = self.rotor_max_thrust * (ctrl + 1) / 2  # SRT
         self._step_mujoco_simulation(ctrl, n_frames)
@@ -420,6 +433,17 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             phi = uniform(0, np.pi / 2)
             downwash = np.array([sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi)]) * (0.5 - self.data.qpos[2])
             self.data.xfrc_applied[self.body_id][:3] = downwash
+
+    def _apply_disturbance(self):
+        if self.data.time > 2 and  self.timestep % self.policy_freq == 0:
+            self.disturbance_duration = choice([0, 1, 2, 3, 4, 5], p=[0.5, 0.1, 0.1, 0.1, 0.1, 0.1])
+            self.disturbance_start = self.timestep
+
+        # Apply disturbance if within duration
+        if self.timestep - self.disturbance_start < self.disturbance_duration:
+            self.data.xfrc_applied[self.body_id][:3] = uniform(low=-1, high=1, size=3)
+        else:
+            self.data.xfrc_applied[self.body_id][:3] = np.zeros(3)
 
     def _ctbr2srt(self, action):
         zcmd = self.max_thrust * (action[0] + 1) / 2
@@ -472,22 +496,23 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.action_last = self.action
         # Present
         self.time_in_sec = round(self.time_in_sec + self.policy_dt, 2)
-        self.timestep += self.num_sims_per_env_step
+        self.timestep += 1
         self.total_reward += reward
     
     def _record(self):
         self.test_record_Q.record(pos_curr=self.xQ, vel_curr=self.vQ, pos_d=self.xQd[self.timestep], vel_d=self.vQd[self.timestep])
 
     def _get_reward(self):
-        names = ['xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'a_rew']
+        names = ['xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'a_rew', 'Δa_rew']
         
         w_xQ = 1.0
         w_vQ = 0.5
         w_ψQ = 1.0
         w_ωQ = 0.5
         w_a  = 0.5
+        w_Δa = 0.05
 
-        reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_a])
+        reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_a, w_Δa])
         weights = reward_weights / sum(reward_weights)
 
         scale_xQ = 1.0/0.5
@@ -495,6 +520,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         scale_ψQ = 1.0/(pi/2)
         scale_ωQ = 1.0/0.25
         scale_a  = 1.0/4.0
+        scale_Δa = 1.0/4.0
 
         ψQd = 0
         ψQ  = quat2euler_raw(self.data.qpos[3:7])[2]
@@ -504,9 +530,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         eψQ = abs(ψQ - ψQd)
         eωQ = norm(self.ω, ord=2)
         ea = norm(self.action, ord=2)
+        eΔa = norm(self.action - self.action_last, ord=2)
 
-        rewards = exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_a])
-                      *np.array([exQ, evQ, eψQ, eωQ, ea]))
+        rewards = exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_a, scale_Δa])
+                      *np.array([exQ, evQ, eψQ, eωQ, ea, eΔa]))
         reward_dict = dict(zip(names, weights * rewards))
         
         if self.traj_type == "setpoint":

@@ -1,10 +1,12 @@
 <mujoco model="quadrotor_white_falcon">
     <!-- <include file="empty_world_center.xml" /> -->
-    <compiler angle="degree" inertiafromgeom="true" coordinate="local" />
+    <compiler angle="degree" coordinate="local"/>
     <option timestep="0.001" gravity="0 0 -9.81" density="1.225" viscosity="1.789e-5" integrator="RK4" />
     <default>
-        <joint armature="1" damping="1" limited="true" />
-        <geom conaffinity="0" condim="3" density="5.0" friction="1 0.5 0.5" margin="0.01" rgba="0.8 0.6 0.4 1" />
+        <geom contype="0" conaffinity="0" condim="1" solref="0.001 1" density="0"/>
+        <default class="collision">
+          <geom group="2" contype="1" type="box" density="0" />
+        </default>
     </default>
     <asset>
         <texture builtin="gradient" height="100" width="100" rgb1="0.6 0.8 1.0" rgb2="1 1 1" type="skybox"/>
@@ -18,61 +20,26 @@
         <geom type="box" size="3 3 3" pos="0 0 2.94" rgba="0 1 0 0.05" conaffinity="0"/>
         
         <body name="quadrotor" pos="0 0 0">
-            <site name="body_frame" pos="0 0 0" quat="1 0 0 0"/>
+            <freejoint/>
             <inertial pos="0 0 0" mass="0.835" diaginertia="0.0049 0.0053 0.0098" />
-            <joint name="root" type="free" damping="0" armature="0" pos="0 0 0" limited="false" />
+            <geom class="collision" type="box" pos="0 0 0" quat="1 0 0 0" size="0.08 0.05 0.025" rgba="0 0.15 0.47 1" />
+            <site name="body_frame" pos="0 0 0" quat="1 0 0 0"/>
+            <geom type="box" pos="0.071 0.071 0.0" size="0.075 .005 .005" quat="0.924 0.0 0.0 0.383" rgba=".8 .8 .8 1" />
+            <geom type="box" pos="0.071 -0.071 0.0" size="0.075 .005 .005" quat="0.383 0.0 0.0 0.924" rgba=".8 .8 .8 1" />
+            <geom type="box" pos="-0.071 -0.071 0.0" size="0.075 .005 .005" quat="-0.383 0.0 0.0 0.924" rgba=".8 .8 .8 1" />
+            <geom type="box" pos="-0.071 0.071 0.0" size="0.075 .005 .005" quat="0.924 0.0 0.0 -0.383" rgba=".8 .8 .8 1" />
 
-            <body name="core" pos="0 0 0">
-                <geom type="box" pos="0 0 0" quat="1 0 0 0" size="0.08 0.05 0.025" rgba="0 0.15 0.47 1" />
-            </body>
+            <geom type="cylinder" pos="0.11059 0.11059 0.0125" size="0.05 0.0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" />
+            <site name="motor0" type="cylinder" pos="0.11059 0.11059 0.0125" size=".01 .0025" quat="1 0 0 0" rgba=".8 .8 .8 1" />
 
-            <body name="arm00" pos="0.071 0.071 0.0">
-                <geom type="box" pos="0 0 0" size="0.075 .005 .005" quat="0.924 0.0 0.0 0.383" rgba=".8 .8 .8 1" />
-            </body>
+            <geom type="cylinder" pos="0.11059 -0.11059 0.0125" size="0.05 0.0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" />
+            <site name="motor1" type="cylinder" pos="0.11059 -0.11059 .0125" size="0.01 0.0025" quat="1 0 0 0" rgba=".8 .8 .8 1" />
 
-            <body name="arm10" pos="0.071 -0.071 0.0">
-                <geom type="box" pos="0 0 0" size="0.075 .005 .005" quat="0.383 0.0 0.0 0.924" rgba=".8 .8 .8 1" />
-            </body>
+            <geom type="cylinder" pos="-0.11059 -0.11059 0.0125" size="0.05 0.0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" />
+            <site name="motor2" type="cylinder" pos="-0.11059 -0.11059 .0125" size="0.01 0.0025" quat="1 0 0 0" rgba=".8 .8 .8 1" />
 
-            <body name="arm20" pos="-0.071 -0.071 0.0">
-                <geom type="box" pos="0 0 0" size="0.075 .005 .005" quat="-0.383 0.0 0.0 0.924" rgba=".8 .8 .8 1" />
-            </body>
-
-            <body name="arm30" pos="-0.071 0.071 0.0">
-                <geom type="box" pos="0 0 0" size="0.075 .005 .005" quat="0.924 0.0 0.0 -0.383" rgba=".8 .8 .8 1" />
-            </body>
-
-            <body name="arm01" pos="0.12 0.12 0">
-                <geom type="box" pos="0 0 0.005" size="0.01 0.005 0.01" quat="0.924 0.0 0.0 0.383" rgba=".8 .8 .8 1" />
-                <body name="thruster0" pos="0 0 0.015">
-                    <geom type="cylinder" pos="0 0 0.0025" size="0.05 0.0025" quat="0.924 0.0 0.0 0.383" rgba="1 0.67 0 0.5" />
-                    <site name="motor0" type="cylinder" pos="0 0 0.0025" size=".01 .0025" quat="0.924 0.0 0.0 0.383" rgba=".8 .8 .8 1" />
-                </body>
-            </body>
-
-            <body name="arm11" pos="0.12 -0.12 0">
-                <geom type="box" pos="0 0 0.005" size=".01 .005 .01" quat="0.383 0.0 0.0 0.924" rgba=".8 .8 .8 1" />
-                <body name="thruster1" pos="0 0 0.015">
-                    <geom type="cylinder" pos="0 0 0.0025" size="0.05 0.0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" />
-                    <site name="motor1" type="cylinder" pos="0 0 .0025" size="0.01 0.0025" quat="1 0 0 0" rgba=".8 .8 .8 1" />
-                </body>
-            </body>
-
-            <body name="arm21" pos="-0.12 -0.12 0">
-                <geom type="box" pos="0 0 0.005" size=".01 .005 .01" quat="-0.383 0.0 0.0 0.924" rgba=".8 .8 .8 1" />
-                <body name="thruster2" pos="0 0 0.015">
-                    <geom type="cylinder" pos="0 0 0.0025" size=".05 .0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" />
-                    <site name="motor2" type="cylinder" pos="0 0 .0025" size=".01 .0025" quat="1 0 0 0" rgba=".8 .8 .8 1" />
-                </body>
-            </body>
-
-            <body name="arm31" pos="-0.12 0.12 0">
-                <geom type="box" pos="0 0 0.005" size=".01 .005 .01" quat="0.924 0.0 0.0 -0.383" rgba=".8 .8 .8 1" />
-                <body name="thruster3" pos="0 0 0.015">
-                    <geom type="cylinder" pos="0 0 0.0025" size=".05 .0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" />
-                    <site name="motor3" type="cylinder" pos="0 0 .0025" size=".01 .0025" quat="1 0 0 0" rgba=".8 .8 .8 1" />
-                </body>
-            </body>
+            <geom type="cylinder" pos="-0.11059 0.11059 0.0125" size="0.05 0.0025" quat="1 0 0 0" rgba="1 0.67 0 0.5" />
+            <site name="motor3" type="cylinder" pos="-0.11059 0.11059 .0125" size="0.01 0.0025" quat="1 0 0 0" rgba=".8 .8 .8 1" />
 
             <site name="x_axis" type="box" pos=".1 .0 .0" size=".1 .004 .004" quat="1 0 0 0" rgba="1 0 0 0.2" />
             <site name="y_axis" type="box" pos=".0 .1 .0" size=".1 .004 .004" quat=".707 0 0 .707" rgba="0 1 0 0.2" />
