@@ -14,6 +14,7 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 import torch as th
 import numpy as np
 from envs.quadrotor_env import QuadrotorEnv
+from envs.quadrotor_mini_env import QuadrotorMiniEnv
 from train.feature_extractor import CustomFeaturesExtractor
 import argparse
 import time
@@ -25,9 +26,11 @@ def parse_arguments():
     # Execution parameters
     parser.add_argument('--id', type=str, default='untitled', help='Provide experiment name and ID.')
     parser.add_argument('--visualize', type=bool, default=False, help='Choose visualization option.')
-    parser.add_argument('--device', type=str, default='mps', help='Provide device info.')
+    parser.add_argument('--device', type=str, default='cuda', help='Provide device info.')
     parser.add_argument('--num_envs', type=int, default=8, help='Provide number of parallel environments.')
-    parser.add_argument('--num_steps', type=int, default=1e+9, help='Provide number of steps.')
+    parser.add_argument('--num_steps', type=int, default=1e+7, help='Provide number of steps.')
+    parser.add_argument('--quad', type=str, default='mini', help='Choose falcon or mini environment.')
+    parser.add_argument('--checkpoint', type=str, default=None, help='Loading pretrained model, provide model ID')
 
     args = parser.parse_args()
     args_dict = vars(args)
@@ -77,12 +80,18 @@ def main():
     
     # Environment parameters
     render_mode = 'human' if args_dict['visualize'] else None
+
+    # case switch for falcon or mini
+    env_dict = {
+        'falcon': QuadrotorEnv,
+        'mini': QuadrotorMiniEnv
+    }
+    QuadEnv = env_dict.get(args_dict['quad'], QuadrotorMiniEnv)
     
     # Parallel environment
     def create_env(seed=0):
         def _init():
-            env = QuadrotorEnv(render_mode=render_mode,
-                                      env_num=seed)
+            env = QuadEnv(render_mode=render_mode, env_num=seed)
             return env
         set_random_seed(seed)
         return _init
@@ -91,7 +100,7 @@ def main():
     env = VecMonitor(DummyVecEnv([create_env(seed=i) for i in range(num_envs)]))
 
     # Callbacks
-    stop_callback = StopTrainingOnRewardThreshold(reward_threshold=4000, verbose=1)
+    stop_callback = StopTrainingOnRewardThreshold(reward_threshold=59500, verbose=1)
     eval_callback = EvalCallbackWithTimestamp(env,
                                  callback_on_new_best=stop_callback,
                                  eval_freq=2500,
@@ -138,17 +147,21 @@ def main():
 
     model = PPO('MlpPolicy',  # CustomActorCriticPolicy,
                 env=env,
-                learning_rate=1e-4,
-                n_steps=n_steps, # 2048
-                batch_size=batch_size, # 512*num_cpu
+                learning_rate=3e-4,
+                n_steps=n_steps, # 2048  |  The number of steps to run for each environment per update / 2048 if dt=0.001 / 2048*16 if dt=0.01
+                batch_size=batch_size, # 512*num_cpu  |  *16 if dt=0.01
                 gamma=0.99,
-                gae_lambda=0.95,
+                gae_lambda=0.95,  # 0.95
                 clip_range=linear_schedule(0.2),
                 ent_coef=0.02, # Makes PPO explore
                 verbose=1,
                 policy_kwargs={'activation_fn':activation_fn, 'net_arch':net_arch}, # policy_kwargs={'activation': 'dual', 'thrust': 2.55, 'thrust_max': 5.0},
                 tensorboard_log=log_path,
                 device=device)
+
+    if args_dict['checkpoint'] is not None:
+        path = os.path.join("saved_models","saved_model_"+args_dict['checkpoint'], 'best_model')
+        model.set_parameters(path)
 
     model.learn(total_timesteps=num_steps, # The total number of samples (env steps) to train on
                 progress_bar=True,

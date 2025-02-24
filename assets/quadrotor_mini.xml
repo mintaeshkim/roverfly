@@ -1,0 +1,64 @@
+<mujoco model="quadrotor_mini">
+    <!-- <include file="empty_world_center.xml" /> -->
+    <compiler angle="degree" coordinate="local"/>
+    <option timestep="0.001" gravity="0 0 -9.81" density="1.225" viscosity="1.789e-5" integrator="RK4" />
+    <default>
+        <geom contype="0" conaffinity="0" condim="1" solref="0.001 1" density="0"/>
+        <default class="collision">
+          <geom group="2" contype="1" type="box" density="0" />
+        </default>
+    </default>
+    <asset>
+        <texture builtin="gradient" height="100" width="100" rgb1="0.6 0.8 1.0" rgb2="1 1 1" type="skybox"/>
+        <texture name="texplane" builtin="checker" height="100" width="100" rgb1="0.7 0.8 1.0" rgb2="1 1 1" type="2d"/>
+        <material name="matplane" texture="texplane" texrepeat="10 10" reflectance="0.2" shininess="0.2" specular="0.5"/>
+    </asset>
+
+    <worldbody>
+        <light cutoff="100" diffuse="1 1 1" dir="0 0 -1.3" directional="true" exponent="1" pos="0 0 10" specular=".1 .1 .1"/>
+        <geom conaffinity="1" condim="3" material="matplane" name="floor" pos="0 0 -0.025" rgba="0.8 0.8 0.8 1" size="10 10 0.2" type="plane"/>
+        <geom type="box" size="3 3 3" pos="0 0 2.94" rgba="0 1 0 0.05" conaffinity="0"/>
+        
+        <body name="quadrotor" pos="0 0 0">
+            <freejoint/>
+            <inertial pos="0 0 0.015" mass="0.280" diaginertia="236.40e-6 236.40e-6 303.16e-6" />
+            <geom class="collision" type="box" pos="0 0 0" quat="1 0 0 0" size="0.025 0.025 0.02" rgba="0 0.15 0.47 1" />
+            <site name="body_frame" pos="0 0 0" quat="1 0 0 0"/>
+            <geom type="box" pos="0.04 -0.04 0.0" size="0.03 .005 .005" quat="0.383 0.0 0.0 0.924" rgba=".8 .8 .8 1" />
+            <geom type="box" pos="-0.04 -0.04 0.0" size="0.03 .005 .005" quat="-0.383 0.0 0.0 0.924" rgba=".8 .8 .8 1" />
+            <geom type="box" pos="-0.04 0.04 0.0" size="0.03 .005 .005" quat="0.924 0.0 0.0 -0.383" rgba=".8 .8 .8 1" />
+            <geom type="box" pos="0.04 0.04 0.0" size="0.03 .005 .005" quat="0.924 0.0 0.0 0.383" rgba=".8 .8 .8 1" />
+
+            <geom type="cylinder" pos="0.05785 -0.05785 0.005" size="0.0381 0.001" quat="1 0 0 0" rgba="1 0.67 0 0.5" />
+            <site name="motor0" type="cylinder" pos="0.05785 -0.05785 0" size="0.01 0.0025" quat="1 0 0 0" rgba=".8 .8 .8 1" />
+
+            <geom type="cylinder" pos="-0.05785 -0.05785 0.005" size="0.0381 0.001" quat="1 0 0 0" rgba="1 0.67 0 0.5" />
+            <site name="motor1" type="cylinder" pos="-0.05785 -0.05785 0" size="0.01 0.0025" quat="1 0 0 0" rgba=".8 .8 .8 1" />
+
+            <geom type="cylinder" pos="-0.05785 0.05785 0.005" size="0.0381 0.001" quat="1 0 0 0" rgba="1 0.67 0 0.5" />
+            <site name="motor2" type="cylinder" pos="-0.05785 0.05785 0" size="0.01 0.0025" quat="1 0 0 0" rgba=".8 .8 .8 1" />
+
+            <geom type="cylinder" pos="0.05785 0.05785 0.005" size="0.0381 0.001" quat="1 0 0 0" rgba="1 0.67 0 0.5" />
+            <site name="motor3" type="cylinder" pos="0.05785 0.05785 0" size="0.01 .00025" quat="1 0 0 0" rgba=".8 .8 .8 1" />
+
+            <site name="x_axis" type="box" pos=".1 .0 .0" size=".1 .004 .004" quat="1 0 0 0" rgba="1 0 0 0.2" />
+            <site name="y_axis" type="box" pos=".0 .1 .0" size=".1 .004 .004" quat=".707 0 0 .707" rgba="0 1 0 0.2" />
+            <site name="z_axis" type="box" pos=".0 .0 .1" size=".1 .004 .004" quat="-.707 0 .707 0" rgba="0 0 1 0.2" />
+        </body>
+
+    </worldbody>
+
+    <actuator>
+        <motor name="Motor0" ctrllimited="true" ctrlrange="0 5.63" gear="0  0. 1. 0. 0. -0.005119" site="motor0" />
+        <motor name="Motor1" ctrllimited="true" ctrlrange="0 5.63" gear="0  0. 1. 0. 0. 0.005119" site="motor1" />
+        <motor name="Motor2" ctrllimited="true" ctrlrange="0 5.63" gear="0  0. 1. 0. 0. -0.005119" site="motor2" />
+        <motor name="Motor3" ctrllimited="true" ctrlrange="0 5.63" gear="0  0. 1. 0. 0. 0.005119" site="motor3" />
+    </actuator>
+
+    <sensor>
+        <framepos name="Body_pos" objtype="site" objname="body_frame"/>       <!-- datasensor[0:3] -->
+        <framequat name="Body_quat" objtype="site" objname="body_frame"/>     <!-- datasensor[3:7] -->
+        <framelinvel name="Body_linvel" objtype="site" objname="body_frame" /> <!-- datasensor[7:10] -->
+        <gyro name="Body_angvel_local" site="body_frame"/>                    <!-- datasensor[10:13] -->
+    </sensor>
+</mujoco>
