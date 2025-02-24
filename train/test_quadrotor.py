@@ -4,6 +4,7 @@ parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.append(os.path.join(parent_dir))
 sys.path.append(os.path.join(parent_dir, 'envs'))
 from envs.quadrotor_env import QuadrotorEnv
+from envs.quadrotor_mini_env import QuadrotorMiniEnv
 from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
 from envs.ppo.ppo import PPO # Customized
 from stable_baselines3.common.evaluation import evaluate_policy
@@ -15,6 +16,7 @@ def parse_arguments():
     # Execution parameters
     parser.add_argument('--id', type=str, default='untitled', help='Provide experiment name and ID.')
     parser.add_argument('--visualize', type=bool, default=False, help='Choose visualization option.')
+    parser.add_argument('--quad', type=str, default='mini', help='Choose falcon or mini environment.')
     
     args = parser.parse_args()
     args_dict = vars(args)
@@ -33,7 +35,12 @@ def main():
     # Environment parameters
     render_mode = 'human' if args_dict['visualize'] else None
 
-    env = QuadrotorEnv(render_mode=render_mode)
+    env_dict = {
+        'falcon': QuadrotorEnv,
+        'mini': QuadrotorMiniEnv
+    }
+    QuadEnv = env_dict.get(args_dict['quad'], QuadrotorMiniEnv)
+    env = QuadEnv(render_mode=render_mode)
     env = VecMonitor(DummyVecEnv([lambda: env]))
     
     print("Evaluation start!")

@@ -24,11 +24,11 @@ class EnvRandomizer(object):
         self._default_actuator_gear = deepcopy(self.model.actuator_gear)
 
         # Noise scales
-        self.ipos_noise_scale = 0.01  # m
+        self.ipos_noise_scale = 0.005  # m
         self.iquat_noise_scale = 5  # deg
-        self.mass_noise_scale = 0.05
-        self.inertia_noise_scale = 0.05
-        self.actuator_gear_noise_scale = 0.05
+        self.mass_noise_scale = 0.025
+        self.inertia_noise_scale = 0.025
+        self.actuator_gear_noise_scale = 0.025
 
     def randomize_env(self, model):
         model = self.reset_env(model=model)

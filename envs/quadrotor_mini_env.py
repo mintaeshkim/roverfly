@@ -5,7 +5,7 @@ parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.append(os.path.join(parent_dir))
 sys.path.append(os.path.join(parent_dir, 'envs'))
 import numpy as np
-from numpy import abs, arccos, clip, concatenate, copy, exp, mean, pi, round, sum, sqrt
+from numpy import abs, arccos, clip, concatenate, copy, cross, exp, mean, pi, round, sum, sqrt, tanh
 from numpy.random import choice, uniform, normal
 from numpy.linalg import inv, norm
 from typing import Dict, Union
@@ -32,7 +32,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
     
     def __init__(
         self,
-        max_timesteps:int = 1500,  # SRT # 15s
+        max_timesteps:int = 4500,  # SRT
         xml_file: str = "../assets/quadrotor_mini.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
@@ -51,7 +51,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         #################### DYNAMICS ####################
         ##################################################
         # region
-        self.sim_freq: float       = 500.0 if self.control_scheme == "ctbr" else 500.0
+        self.sim_freq: float       = 500.0 if self.control_scheme == "ctbr" else 100.0
         self.policy_freq: float    = 100.0
         self.sim_dt: float         = 1 / self.sim_freq
         self.policy_dt: float      = 1 / self.policy_freq
@@ -75,7 +75,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         self.is_delayed        = True
         self.is_env_randomized = True
         self.is_full_traj      = False
-        self.is_disturbed    = True
+        self.is_disturbed      = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -93,7 +93,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         self.d_buffer          = deque(np.zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(np.zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
         self.action_offset     = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else -0.637 * np.ones(4)
-        self.force_offset      = 2.0 * np.ones(4)  # Warm start
+        self.force_offset      = 0.6867 * np.ones(4)  # Warm start
         self.action_last       = self.action_offset
         self.num_episode       = 0
         self.history_epi       = {'setpoint': deque([0]*10, maxlen=10), 'curve': deque([0]*10, maxlen=10)}
@@ -144,7 +144,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         self.g = 9.81
         self.JQ = np.array([[236.40, 0, 0],
                             [0, 236.40, 0],
-                            [0, 0, 303.16]]) * 1.0e-6
+                            [0, 0, 303.16]]) * 1e-6
         # Propeller Characteristics
         self.propellerThrustFromSpeedSqr = 1.145e-7  # [N/(rad/s)**2]
         self.propellerTorqueFromThrust = 0.005119  # [N.m/N]
@@ -238,7 +238,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         self._init_history_ff()
         obs = self._get_obs()
         self.info = self._get_reset_info() # reset info to {}
-        if self.is_env_randomized and self.stage==2: self.model = self.env_randomizer.randomize_env(self.model)
+        if self.is_env_randomized: self.model = self.env_randomizer.randomize_env(self.model)
         return obs, self.info
   
     def _reset_env(self):
@@ -450,7 +450,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
             downwash = np.array([sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi)]) * (0.5 - self.data.qpos[2])
             self.data.xfrc_applied[self.body_id][:3] = downwash
 
-    def _apply_disturbance(self):  # For continuous disturbance
+    def _apply_disturbance(self):
         # Randomize Duration
         if self.data.time > 2 and  self.timestep % self.policy_freq == 0:
             self.disturbance_duration = choice([0, 1, 2, 3, 4, 5], p=[0.5, 0.1, 0.1, 0.1, 0.1, 0.1])
@@ -458,14 +458,14 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
 
         # Apply disturbance if within duration
         if self.timestep - self.disturbance_start < self.disturbance_duration:
-            self.data.xfrc_applied[self.body_id][:3] = uniform(low=-1, high=1, size=3)
+            self.data.xfrc_applied[self.body_id][:3] = 0.1 * uniform(low=-1, high=1, size=3)
         else:
             self.data.xfrc_applied[self.body_id][:3] = np.zeros(3)
 
     def _ctbr2srt(self, thrust_body_rates):
-        zcmd = self.max_thrust * (thrust_body_rates[0] + 1) / 2
-
-        ω_d = np.array(thrust_body_rates[1:4]) * np.pi # [rad/s]
+        # zcmd = self.max_thrust * (thrust_body_rates[0] + 1) / 2
+        zcmd = dual_tanh(thrust_body_rates[0])  # [N]
+        ω_d = tanh(thrust_body_rates[1:])  # [rad/s]
 
         e_ang_vel = ω_d - self.ω
         ang_accel_d = np.array([e_ang_vel[0]/self.angVelControl_timeConst_xy,
@@ -475,8 +475,8 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         Mcmd = self.JQ @ ang_accel_d + np.cross(self.ω, self.JQ @ self.ω, axis=0)
 
         f = self.A @ concatenate([[zcmd], Mcmd]).reshape((4, 1))
-        f = clip(f.flatten(), 0, self.rotor_max_thrust)   # Clip to max thrust
-        f[f < self.minThrustPerPropeller] = 0                   # Clip to zero if less than min thrust
+        f = clip(f.flatten(), 0, self.rotor_max_thrust)  # Clip to max thrust
+        f[f < self.minThrustPerPropeller] = 0  # Clip to zero if less than min thrust 
 
         # region
         # print("Thrust Body Rates: ", thrust_body_rates)
@@ -504,28 +504,22 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         self.test_record_Q.record(pos_curr=self.xQ, vel_curr=self.vQ, pos_d=self.xQd[self.timestep], vel_d=self.vQd[self.timestep])
 
     def _get_reward(self):
-        names = ['xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'Δa_rew', 'a_rew']
+        names = ['xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'a_rew']
         
         w_xQ = 1.0
         w_vQ = 0.5
         w_ψQ = 1.0
         w_ωQ = 0.5
-        w_a  = 0.2
-        w_Δa = 0.05
-        # w_effort = 0.1
-        # w_cmd_rates =0.01
+        w_a  = 0.25
 
-        reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa, w_a])
+        reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_a])
         weights = reward_weights / sum(reward_weights)
 
         scale_xQ = 1.0/0.5
         scale_vQ = 1.0/2.0
         scale_ψQ = 1.0/(pi/2)
-        scale_ωQ = 1.0/(4*pi)
-        scale_a  = 1.0/4.0 # 4*1
-        scale_Δa = 1.0/4.0  # sqrt(4*2^2) ~ 4
-        # scale_effort = 1.0/4  # hover thrust ~ 2 N on each rotor sqrt(4*2^2) ~ 4
-        # scale_cmd_rates = 1.0/()
+        scale_ωQ = 1.0/(0.25)
+        scale_a  = 1.0/4.0
 
         ψQd = 0
         ψQ  = quat2euler_raw(self.data.qpos[3:7])[2]
@@ -534,16 +528,10 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         evQ = norm(self.evQ, ord=2)
         eψQ = abs(ψQ - ψQd)
         eωQ = norm(self.ω, ord=2)
-        ea = norm(self.action[1:4], ord=1)
-        Δa = norm(self.action - self.action_last, ord=2)
-        # effort = norm(self.actual_forces, ord=2)
-        # cmd_rates = norm(self.action[1:], ord=1)
+        ea = norm(self.action[1:], ord=2)
 
-        rewards = exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa])
-                      *np.array([exQ, evQ, eψQ, eωQ, Δa]))
-        rewards = np.append(rewards, -ea)
-        # print("ExQ: ", exQ, " | EvQ: ", evQ, " | eψQ: ", eψQ, " | eωQ: ", eωQ, " | ea: ", ea, " | Δa: ", Δa)
-        # print("Rewards: ", rewards)
+        rewards = exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_a])
+                      *np.array([exQ, evQ, eψQ, eωQ, ea]))
         reward_dict = dict(zip(names, weights * rewards))
         
         if self.traj_type == "setpoint":

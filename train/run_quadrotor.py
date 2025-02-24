@@ -28,7 +28,7 @@ def parse_arguments():
     parser.add_argument('--visualize', type=bool, default=False, help='Choose visualization option.')
     parser.add_argument('--device', type=str, default='cuda', help='Provide device info.')
     parser.add_argument('--num_envs', type=int, default=8, help='Provide number of parallel environments.')
-    parser.add_argument('--num_steps', type=int, default=1e+7, help='Provide number of steps.')
+    parser.add_argument('--num_steps', type=int, default=1e+8, help='Provide number of steps.')
     parser.add_argument('--quad', type=str, default='mini', help='Choose falcon or mini environment.')
     parser.add_argument('--checkpoint', type=str, default=None, help='Loading pretrained model, provide model ID')
 
@@ -100,7 +100,7 @@ def main():
     env = VecMonitor(DummyVecEnv([create_env(seed=i) for i in range(num_envs)]))
 
     # Callbacks
-    stop_callback = StopTrainingOnRewardThreshold(reward_threshold=59500, verbose=1)
+    stop_callback = StopTrainingOnRewardThreshold(reward_threshold=10000, verbose=1)
     eval_callback = EvalCallbackWithTimestamp(env,
                                  callback_on_new_best=stop_callback,
                                  eval_freq=2500,
@@ -141,19 +141,19 @@ def main():
     num_steps = args_dict['num_steps']
     device = args_dict['device']
 
-    horizon_length = 64 if num_envs >= 16 else 16384
-    n_steps = horizon_length
-    batch_size = 32 * num_envs if num_envs >= 16 else 8192
+    horizon_len = 64
+    n_steps = horizon_len if num_envs >= 16 else 256
+    batch_size = min(32 * num_envs, 4096)
 
     model = PPO('MlpPolicy',  # CustomActorCriticPolicy,
                 env=env,
                 learning_rate=3e-4,
-                n_steps=n_steps, # 2048  |  The number of steps to run for each environment per update / 2048 if dt=0.001 / 2048*16 if dt=0.01
-                batch_size=batch_size, # 512*num_cpu  |  *16 if dt=0.01
+                n_steps=n_steps,
+                batch_size=batch_size,
                 gamma=0.99,
-                gae_lambda=0.95,  # 0.95
+                gae_lambda=0.98,
                 clip_range=linear_schedule(0.2),
-                ent_coef=0.02, # Makes PPO explore
+                ent_coef=0.01, # Makes PPO explore
                 verbose=1,
                 policy_kwargs={'activation_fn':activation_fn, 'net_arch':net_arch}, # policy_kwargs={'activation': 'dual', 'thrust': 2.55, 'thrust_max': 5.0},
                 tensorboard_log=log_path,
