@@ -152,7 +152,7 @@ def main():
                 batch_size=batch_size,
                 gamma=0.99,
                 gae_lambda=0.98,
-                clip_range=linear_schedule(0.2),
+                clip_range=linear_schedule(0.05),
                 ent_coef=0.01, # Makes PPO explore
                 verbose=1,
                 policy_kwargs={'activation_fn':activation_fn, 'net_arch':net_arch}, # policy_kwargs={'activation': 'dual', 'thrust': 2.55, 'thrust_max': 5.0},
