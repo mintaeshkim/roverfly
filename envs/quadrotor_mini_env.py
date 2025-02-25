@@ -21,7 +21,6 @@ import envs.utils.utility_trajectory as ut
 from envs.utils.env_randomizer import EnvRandomizer
 from envs.utils.utility_functions import *
 from envs.utils.rotation_transformations import *
-import time
 import matplotlib.pyplot as plt
 
 
@@ -75,8 +74,8 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         self.is_full_traj      = False
 
         self.is_delayed        = True
-        self.is_env_randomized = False
-        self.is_disturbed      = False
+        self.is_env_randomized = True
+        self.is_disturbed      = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -262,7 +261,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         self.progress['curve'] = (mean(self.history_epi['curve']) / self.max_timesteps)
         
         """ TEST """
-        # self.progress['setpoint'] = 1.0
+        # self.progress['setpoint'] = 0.3
         # self.progress['curve'] = 0.5
 
         """ Choose task """
@@ -275,6 +274,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
 
         """ TEST """
         # self.stage = 2
+        # self.traj_type = 'setpoint'
         # self.traj_type = 'curve'
 
         """ Set trajectory parameters """
@@ -301,6 +301,9 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
 
         """ Randomize initial states """
         self._set_initial_state()
+
+        """ Domain randomization """
+        self.env_randomizer.set_noise_scale(self.progress['setpoint'])
 
         """ Reset action """
         self.action = self.action_offset
@@ -510,7 +513,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         w_vQ = 0.5
         w_ψQ = 1.0
         w_ωQ = 0.5
-        w_Δa  = 0.5
+        w_Δa = 0.5
 
         reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
         weights = reward_weights / sum(reward_weights)
@@ -519,7 +522,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         scale_vQ = 1.0/2.0
         scale_ψQ = 1.0/(pi/2)
         scale_ωQ = 1.0/(0.25)
-        scale_Δa  = 1.0/1.0
+        scale_Δa = 1.0/1.0
 
         ψQd = 0
         ψQ  = quat2euler_raw(self.data.qpos[3:7])[2]
