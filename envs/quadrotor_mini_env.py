@@ -183,8 +183,12 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         [self.action_queue.append([self.data.time, self.action_last]) for _ in range(self.action_queue_len)]
 
         # Disturbance Parameters
+        self.disturbance_duration_range = [2, 8]  # 2 to 8 seconds
+        self.force_disturbance_range = [-0.5, 0.5]  # N
+        self.torque_disturbance_range = [-0.005, 0.005]  # Nm
         self.disturbance_duration = 0
         self.disturbance_start = 0
+        self.disturbance_wrench = np.zeros(6)
         # endregion
 
         self.time = 0
@@ -261,7 +265,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         self.progress['curve'] = (mean(self.history_epi['curve']) / self.max_timesteps)
         
         """ TEST """
-        # self.progress['setpoint'] = 0.3
+        # self.progress['setpoint'] = 0.5
         # self.progress['curve'] = 0.5
 
         """ Choose task """
@@ -273,8 +277,8 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
             self.traj_type = choice(['setpoint', 'curve'], p=[0.1, 0.9])
 
         """ TEST """
-        # self.stage = 2
-        # self.traj_type = 'setpoint'
+        self.stage = 1
+        self.traj_type = 'setpoint'
         # self.traj_type = 'curve'
 
         """ Set trajectory parameters """
@@ -285,10 +289,10 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
             self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt,
                                            ax=choice([-1,1])*3*self.progress["curve"],
                                            ay=choice([-1,1])*3*self.progress["curve"],
-                                           az=choice([-1,1])*3*self.progress["curve"],
+                                           az=choice([-1,1])*1*self.progress["curve"],
                                            f1=choice([-1,1])*0.5*self.progress["curve"],
                                            f2=choice([-1,1])*0.5*self.progress["curve"],
-                                           f3=choice([-1,1])*0.5*self.progress["curve"])
+                                           f3=choice([-1,1])*0.25*self.progress["curve"])
             self.difficulty = self.stage * self.progress["curve"]
 
         if self.is_full_traj: self.traj = ut.FullCrazyTrajectory(tf=45, traj=self.traj)
@@ -320,17 +324,15 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         if self.is_full_traj:
             self.x_offset = np.array([3 * uniform(low=-1, high=1), 3 * uniform(low=-1, high=1), 0])
         else:
-            self.x_offset = np.array([3 * uniform(low=-1, high=1), 3 * uniform(low=-1, high=1), 6 * uniform(low=0.5, high=1)])
+            self.x_offset = np.array([3 * uniform(low=-1, high=1), 3 * uniform(low=-1, high=1), 6 * uniform(low=0, high=1)])
         self.xQd += self.x_offset
         self.goal_pos = self.xQd[-1]
 
     def _set_initial_state(self):
-        self.perturbation = self.progress[self.traj_type]
-
-        wx = 0.05 * uniform(0, self.perturbation)
-        watt = (pi/36) * uniform(0, self.perturbation)
-        wv = 0.1 * uniform(0, self.perturbation)
-        wω = (pi/18) * uniform(0, self.perturbation)
+        wx = 0.1 * self.progress[self.traj_type]
+        watt = (pi/12) * self.progress[self.traj_type]
+        wv = 0.2 * self.progress[self.traj_type]
+        wω = (pi/6) * self.progress[self.traj_type]
         
         xQ = self.xQd[0] + uniform(size=3, low=-wx, high=wx)
         attQ = euler2quat_raw(quat2euler_raw(self.init_qpos[3:7]) + uniform(size=3, low=-watt, high=watt))
@@ -452,21 +454,23 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
             downwash = np.array([sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi)]) * (0.5 - self.data.qpos[2])
             self.data.xfrc_applied[self.body_id][:3] = downwash
 
-    def _apply_disturbance(self):
-        # Randomize Duration
-        if self.data.time > 2 and  self.timestep % self.policy_freq == 0:
-            self.disturbance_duration = choice([0, 1, 2, 3, 4, 5], p=[0.5, 0.1, 0.1, 0.1, 0.1, 0.1])
-            self.disturbance_start = self.timestep
-
+    def _apply_disturbance(self):  # For continuous Force/Torque disturbance
         # Apply disturbance if within duration
-        if self.timestep - self.disturbance_start < self.disturbance_duration:
-            self.data.xfrc_applied[self.body_id][:3] = 0.1 * uniform(low=-1, high=1, size=3)
+        if self.data.time - self.disturbance_start < self.disturbance_duration:
+            pass
+        elif self.data.time - self.disturbance_start < self.disturbance_duration + 1:
+            # Set disturbance to zero for 1 second after disturbance duration
+            self.disturbance_wrench = np.zeros(6)  # Zero force/torque
         else:
-            self.data.xfrc_applied[self.body_id][:3] = np.zeros(3)
+            # Reset disturbance parameters for the next disturbance
+            self.disturbance_duration = uniform(low=self.disturbance_duration_range[0], high=self.disturbance_duration_range[1])
+            force = uniform(low=self.force_disturbance_range[0], high=self.force_disturbance_range[1], size=3)    # Force  [N]
+            torque = uniform(low=self.torque_disturbance_range[0], high=self.torque_disturbance_range[1], size=3) # Torque [Nm]
+            self.disturbance_wrench = concatenate([force, torque])
+            self.disturbance_start = self.data.time
+        self.data.xfrc_applied[self.body_id][0:6] = self.disturbance_wrench
 
     def _ctbr2srt(self, thrust_body_rates):
-        # print(thrust_body_rates)
-        # zcmd = self.max_thrust * (thrust_body_rates[0] + 1) / 2
         zcmd = dual_tanh(thrust_body_rates[0])  # [N]
         ω_d = tanh(thrust_body_rates[1:])  # [rad/s]
 
@@ -521,15 +525,15 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         scale_xQ = 1.0/0.5
         scale_vQ = 1.0/2.0
         scale_ψQ = 1.0/(pi/2)
-        scale_ωQ = 1.0/(0.25)
+        scale_ωQ = 1.0/0.25
         scale_Δa = 1.0/1.0
 
-        ψQd = 0
-        ψQ  = quat2euler_raw(self.data.qpos[3:7])[2]
+        ψQd = np.zeros(3)
+        ψQ  = quat2euler_raw(self.data.qpos[3:7])
 
         exQ = norm(self.exQ, ord=2)
         evQ = norm(self.evQ, ord=2)
-        eψQ = abs(ψQ - ψQd)
+        eψQ = norm(ψQ - ψQd, ord=1)
         eωQ = norm(self.ω, ord=2)
         eΔa = norm(self.action - self.action_last, ord=2)
 

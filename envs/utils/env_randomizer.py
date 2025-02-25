@@ -4,6 +4,7 @@ from numpy.random import uniform, randn
 from numpy.linalg import norm
 from numpy import cos, sin
 from copy import copy
+from rotation_transformations import *
 
 
 class EnvRandomizer(object):
@@ -22,9 +23,9 @@ class EnvRandomizer(object):
         self._default_actuator_gear = copy(self.model.actuator_gear)  # Default actuator properties
 
         # Default noise scales
-        self._default_ipos_noise_scale = 0.005  # m
+        self._default_ipos_noise_scale = 0  # m
         self._default_iquat_noise_scale = 5  # deg
-        self._default_mass_noise_scale = 0.1
+        self._default_mass_noise_scale = 0.2
         self._default_inertia_noise_scale = 0.1
         self._default_actuator_gear_noise_scale = 0.1
 
@@ -44,10 +45,12 @@ class EnvRandomizer(object):
         for gear in model.actuator_gear:
             gear *= 1.0 + uniform(low=-self.actuator_gear_noise_scale, high=self.actuator_gear_noise_scale, size=len(gear))
 
-        # print("body_ipos: \n", model.body_ipos)
-        # print("body_iquat: \n", model.body_iquat)
-        # print("body_mass: \n", model.body_mass)
-        # print("body_inertia: \n", model.body_inertia)
+        # print("body_ipos: \n", model.body_ipos[1])
+        # print("body_iquat: \n", model.body_iquat[1])
+        # print("body_mass: \n", model.body_mass[1])
+        # print("body_inertia: \n", model.body_inertia[1])
+        # R = quat2rot(model.body_iquat[1])
+        # print("full_inertia: \n", R @ np.diag(model.body_inertia[1]) @ R.T)
         # print("actuator_gear: \n", model.actuator_gear)
 
         return model
@@ -100,11 +103,11 @@ def quaternion_multiply(q1, q2):
     return np.array([w, x, y, z])
 
 
-# if __name__ == "__main__":
-#     xml_file = "../../assets/quadrotor_falcon.xml"
-#     model = mj.MjModel.from_xml_path(xml_file)
-#     env_randomizer = EnvRandomizer(model=model)
-#     for _ in range(5):
-#         env_randomizer.set_noise_scale(progress=0.2)
-#         env_randomizer.randomize_env(model=model)
-#         print()
+if __name__ == "__main__":
+    xml_file = "../../assets/quadrotor_mini.xml"
+    model = mj.MjModel.from_xml_path(xml_file)
+    env_randomizer = EnvRandomizer(model=model)
+    for _ in range(1):
+        env_randomizer.set_noise_scale(progress=0.2)
+        env_randomizer.randomize_env(model=model)
+        print()

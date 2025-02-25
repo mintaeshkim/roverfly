@@ -19,7 +19,7 @@
         <geom conaffinity="1" condim="3" material="matplane" name="floor" pos="0 0 -0.025" rgba="0.8 0.8 0.8 1" size="10 10 0.2" type="plane"/>
         <geom type="box" size="3 3 3" pos="0 0 2.94" rgba="0 1 0 0.05" conaffinity="0"/>
         
-        <body name="quadrotor" pos="0 0 0">
+        <body name="quadrotor" pos="0 0 1">
             <freejoint/>
             <inertial pos="0 0 0.015" mass="0.280" diaginertia="236.40e-6 236.40e-6 303.16e-6" />
             <geom class="collision" type="box" pos="0 0 0" quat="1 0 0 0" size="0.025 0.025 0.02" rgba="0 0.15 0.47 1" />
