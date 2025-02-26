@@ -19,6 +19,7 @@ from mujoco_gym.mujoco_env import MujocoEnv
 # ETC
 import envs.utils.utility_trajectory as ut
 from envs.utils.env_randomizer import EnvRandomizer
+from envs.utils.action_filter import ContinuousActionFilter
 from envs.utils.utility_functions import *
 from envs.utils.rotation_transformations import *
 import matplotlib.pyplot as plt
@@ -70,6 +71,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         ##################################################
         # region
         self.is_action_bound   = False
+        self.is_action_filter  = True
         self.is_io_history     = True
         self.is_full_traj      = False
 
@@ -133,6 +135,11 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         ##################################################
         # region
         self._init_env()
+        self.action_filter = ContinuousActionFilter(history_len=self.history_len,
+                                                    a_dim=self.a_dim,
+                                                    lipschitz_const=20.0,
+                                                    a_buffer=self.a_buffer,
+                                                    dt=self.policy_dt)
         # endregion
         ##################################################
         ################ LOW LEVEL CONTROL ###############
@@ -353,9 +360,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         vQ_ff = self.vQ - self.vQd[self.timestep : self.timestep + self.future_len]
         ff = concatenate([(xQ_ff @ self.R).flatten(), (vQ_ff @ self.R).flatten()])  # 30
 
-        obs = concatenate([self.obs_curr,
-                           io_history,
-                           ff])
+        obs = concatenate([self.obs_curr, io_history, ff])
 
         return obs
 
@@ -379,8 +384,8 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         return concatenate([self.xQ / self.pos_bound, self.R.flatten(), self.vQ / self.vel_bound, self.ω])
 
     def step(self, action, restore=False):
-        # 1. Simulate for Single Time Step
-        self.action = action
+        # 1. Simulate single timestep
+        if self.is_action_filter: self.action = self.action_filter.filter_action(action)
         if self.is_delayed: self.action_queue.append([self.data.time, self.action])
         if self.is_full_traj: self._apply_downwash()
         if self.is_disturbed: self._apply_disturbance()
@@ -507,7 +512,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         w_vQ = 0.5
         w_ψQ = 1.0
         w_ωQ = 0.5
-        w_Δa = 0.5
+        w_Δa = 0.1
 
         reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
         weights = reward_weights / sum(reward_weights)
@@ -516,7 +521,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         scale_vQ = 1.0/2.0
         scale_ψQ = 1.0/(pi/2)
         scale_ωQ = 1.0/0.25
-        scale_Δa = 1.0/1.0
+        scale_Δa = 1.0/0.5
 
         ψQd = np.zeros(3)
         ψQ  = quat2euler_raw(self.data.qpos[3:7])
@@ -548,10 +553,9 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         if 5.0 <= self.time_in_sec <= 35.0 and xQ[2] < 0.01:  # Crash except for takeoff and landing
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Crashed | Time: {time} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Crashed | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
                   traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   pos_err=round(exQ, 2),
                   time=round(self.time_in_sec, 2),
@@ -560,10 +564,9 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         if self.time_in_sec <= 35.0 and exQ > self.pos_err_bound:
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Pos error: {pos_err} | Time: {time} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Pos error: {pos_err} | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
                   traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   pos_err=round(exQ, 2),
                   time=round(self.time_in_sec, 2),
@@ -572,10 +575,9 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         elif self.time_in_sec <= 35.0 and evQ > self.vel_err_bound:
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Vel error:  {vel_err} | Time: {time} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Vel error:  {vel_err} | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
                   traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   vel_err=round(evQ, 2),
                   time=round(self.time_in_sec, 2),
@@ -584,10 +586,9 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         elif not(abs(attQ) < pi/2).all():
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Att error: {att} | Time: {time} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Att error: {att} | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
                   traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   att=round(attQ, 2),
                   time=round(self.time_in_sec, 2),
@@ -599,10 +600,9 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
             # self.test_record_Q.reset()
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Max time: {time} | Final pos error: {pos_err} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Max time: {time} | Final pos error: {pos_err} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
                   traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   time=round(self.time_in_sec, 2),
                   pos_err=round(exQ, 2),

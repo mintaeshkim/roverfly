@@ -1,13 +1,14 @@
-"""Two types of filters which can be applied to policy output sequences.
-1. Simple exponential filter
-2. Butterworth filter - lowpass or bandpass
-The implementation of the butterworth filter follows scipy's lfilter
-https://github.com/scipy/scipy/blob/v1.2.1/scipy/signal/signaltools.py
-We re-implement the logic in order to explicitly manage the y states
-The filter implements::
-       a[0]*y[n] = b[0]*x[n] + b[1]*x[n-1] + ... + b[M]*x[n-M]
-                             - a[1]*y[n-1] - ... - a[N]*y[n-N]
-We assume M == N.
+"""
+  Two types of filters which can be applied to policy output sequences.
+  1. Simple exponential filter
+  2. Butterworth filter - lowpass or bandpass
+  The implementation of the butterworth filter follows scipy's lfilter
+  https://github.com/scipy/scipy/blob/v1.2.1/scipy/signal/signaltools.py
+  We re-implement the logic in order to explicitly manage the y states
+  The filter implements::
+        a[0]*y[n] = b[0]*x[n] + b[1]*x[n-1] + ... + b[M]*x[n-M]
+                              - a[1]*y[n-1] - ... - a[N]*y[n-N]
+  We assume M == N.
 """
 
 from __future__ import absolute_import
@@ -18,10 +19,13 @@ import collections
 from absl import logging
 import numpy as np
 from scipy.signal import butter
+import matplotlib.pyplot as plt
+from collections import deque
 
 ACTION_FILTER_ORDER = 2
 ACTION_FILTER_LOW_CUT = 0.0
 ACTION_FILTER_HIGH_CUT = 4.0
+
 
 class ActionFilter(object):
   """Implements a generic lowpass or bandpass action filter."""
@@ -103,6 +107,7 @@ class ActionFilter(object):
       self.xhist[i] = x
       self.yhist[i] = x
     return
+
 
 class ActionFilterButter(ActionFilter):
   """Butterworth filter."""
@@ -220,62 +225,55 @@ class ActionFilterExp(ActionFilter):
         a_coeffs, b_coeffs, order, num_joints, self.ftype)
 
 
+class ContinuousActionFilter:
+    def __init__(self, history_len, a_dim, lipschitz_const, a_buffer, dt):
+        self.history_len = history_len
+        self.a_dim = a_dim
+        self.L = lipschitz_const
+        self.a_buffer = a_buffer
+        self.dt = dt
 
-import matplotlib.pyplot as plt
+    def filter_action(self, new_action):
+        if len(self.a_buffer) == 0:
+            self.a_buffer.append(new_action)
+            return new_action
 
-if __name__ == '__main__':
+        prev_action = self.a_buffer[-1]
+        delta_a = new_action - prev_action
+        max_delta = self.L * self.dt
+        norm_delta = np.linalg.norm(delta_a, ord=2)
+        if norm_delta > max_delta:
+            delta_a = delta_a * (max_delta / norm_delta)
+        filtered_action = prev_action + delta_a
+        self.a_buffer.append(filtered_action)
 
-  np.random.seed(0)
-  sampling_rate = 1000  # Hz
-  t = np.linspace(0, 10, 10 * sampling_rate)
-  num_joints = 1
-  input_signal = np.sin(2 * np.pi * 0.1 * t) + 0.5 * np.random.randn(*t.shape)
+        return filtered_action
 
-  lowcut = [0.1]
-  highcut = [4.0]
-  order = 2
+if __name__ == "__main__":
+  history_len = 5
+  a_dim = 4
+  lipschitz_const = 20.0
+  a_buffer = deque(np.zeros((history_len, a_dim)), maxlen=history_len)
+  dt = 0.01
 
-  butter_filter = ActionFilterButter(lowcut=lowcut, highcut=highcut, sampling_rate=sampling_rate, order=order, num_joints=num_joints)
+  action_filter = ContinuousActionFilter(history_len, a_dim, lipschitz_const, a_buffer, dt)
 
-  filtered_signal = np.array([butter_filter.filter(np.array([x])) for x in input_signal]).flatten()
+  timesteps = 100
+  raw_actions = np.random.uniform(-1, 1, (timesteps, a_dim))
+  filtered_actions = np.zeros((timesteps, a_dim))
 
-  plt.figure(figsize=(14, 7))
-  plt.plot(t, input_signal, label='Original Signal')
-  plt.plot(t, filtered_signal, label='Filtered Signal', linewidth=2)
+  for t in range(timesteps):
+      filtered_actions[t] = action_filter.filter_action(raw_actions[t])
+
+  plt.figure(figsize=(10, 6))
+  for i in range(a_dim):
+      plt.plot(range(timesteps), raw_actions[:, i], linestyle="dashed", alpha=0.5, label=f'Raw Action {i+1}')
+      plt.plot(range(timesteps), filtered_actions[:, i], label=f'Filtered Action {i+1}')
+
+  plt.xlabel("Timestep")
+  plt.ylabel("Action Value")
+  plt.title("Lipschitz Filtered Actions vs. Raw Actions")
   plt.legend()
-  plt.xlabel('Time [seconds]')
-  plt.ylabel('Amplitude')
-  plt.title('Butterworth Filter Applied to Signal')
-  plt.grid(True)
+  plt.grid()
   plt.show()
 
-# if __name__ == '__main__':
-#     np.random.seed(0)
-#     t = np.linspace(0, 10, 1000)  # 1000 Hz sampling rate
-#     input_signal = np.sin(2 * np.pi * 0.75 * t) + 0.5 * np.random.randn(*t.shape)
-
-#     num_joints = 1
-#     lowcut = [0.0]
-#     highcut = [4.0]
-#     order = 2
-
-#     # Different sampling rates
-#     sampling_rates = [50, 100, 500, 1000]
-#     plt.figure(figsize=(14, 10))
-
-#     for i, sampling_rate in enumerate(sampling_rates):
-#         filter = ActionFilterButter(lowcut=lowcut, highcut=highcut, sampling_rate=sampling_rate, order=order, num_joints=num_joints)
-#         downsampled_signal = input_signal[::int(1000/sampling_rate)]
-#         filtered_signal = np.array([filter.filter(np.array([x])) for x in downsampled_signal]).flatten()
-
-#         t_downsampled = t[::int(1000/sampling_rate)]
-#         plt.subplot(len(sampling_rates), 1, i+1)
-#         plt.plot(t, input_signal, label='Original Signal', alpha=0.5)
-#         plt.plot(t_downsampled, filtered_signal, label=f'Filtered Signal ({sampling_rate} Hz)', linewidth=2)
-#         plt.legend()
-#         plt.xlabel('Time [seconds]')
-#         plt.ylabel('Amplitude')
-#         plt.grid(True)
-
-#     plt.tight_layout()
-#     plt.show()
