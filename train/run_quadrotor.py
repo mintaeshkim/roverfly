@@ -117,14 +117,14 @@ def main():
     #             'vf': [64,64,64]}
     # net_arch = {'pi': [128,96,64],
     #             'vf': [128,96,64]}
-    # net_arch = {'pi': [256,128,64],
-    #             'vf': [256,128,64]}
+    net_arch = {'pi': [256,128,64],
+                'vf': [256,128,64]}
     # net_arch = {'pi': [512,512],
     #             'vf': [512,512]}
     # net_arch = {'pi': [256,256],
     #             'vf': [256,256]}
-    net_arch = {'pi': [128,128],
-                'vf': [128,128]}
+    # net_arch = {'pi': [128,128],
+    #             'vf': [128,128]}
     # net_arch = {'pi': [64,64],
     #             'vf': [64,64]}
     # net_arch = {'pi': [512,256,128],
@@ -168,24 +168,5 @@ def main():
                 callback=callback_list)
 
     model.save(save_path)
-
-
-    ####################################################
-    #################### Evaluation ####################
-    ####################################################
-
-    obs_sample = model.env.observation_space.sample()
-
-    print("Pre saved model prediction: ")
-    print(model.predict(obs_sample, deterministic=True))
-    del model # delete trained model to demonstrate loading
-
-    loaded_model = PPO.load(save_path+"/best_model")
-    print("Loaded model prediction: ")
-    print(loaded_model.predict(obs_sample, deterministic=True))
-
-    print("Evaluation start")
-    evaluate_policy(loaded_model, env, n_eval_episodes=5, render=False)
-    env.close()
 
 main()

@@ -24,8 +24,8 @@ class EnvRandomizer(object):
 
         # Default noise scales
         self._default_ipos_noise_scale = 0  # m
-        self._default_iquat_noise_scale = 5  # deg
-        self._default_mass_noise_scale = 0.2
+        self._default_iquat_noise_scale = 0  # deg
+        self._default_mass_noise_scale = 0.1
         self._default_inertia_noise_scale = 0.1
         self._default_actuator_gear_noise_scale = 0.1
 
