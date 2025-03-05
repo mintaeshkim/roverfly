@@ -155,7 +155,7 @@ def main():
                 clip_range=linear_schedule(0.05),
                 ent_coef=0.01, # Makes PPO explore
                 verbose=1,
-                policy_kwargs={'activation_fn':activation_fn, 'net_arch':net_arch}, # policy_kwargs={'activation': 'dual', 'thrust': 2.55, 'thrust_max': 5.0},
+                policy_kwargs={'activation_fn':activation_fn, 'net_arch':net_arch},
                 tensorboard_log=log_path,
                 device=device)
 

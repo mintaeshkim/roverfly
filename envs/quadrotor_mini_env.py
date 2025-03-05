@@ -190,7 +190,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         [self.action_queue.append([self.data.time, self.action_last]) for _ in range(self.action_queue_len)]
 
         # Disturbance Parameters
-        self.disturbance_duration_range = [0, 0.5]  # Impulse
+        self.disturbance_duration_range = [2, 8]
         self.force_disturbance_range = [-0.25, 0.25]  # N
         self.torque_disturbance_range = [-0.0025, 0.0025]  # Nm
         self.disturbance_duration = 0
@@ -273,9 +273,9 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         self.progress['curve'] = (mean(self.history_epi['curve']) / self.max_timesteps)
 
         """ TEST """
-        # self.progress['setpoint'] = 0.5
+        self.progress['setpoint'] = 0.5
         # self.progress['curve'] = 0.5
-        # self.traj_type = 'setpoint'
+        self.traj_type = 'setpoint'
         # self.traj_type = 'curve'
 
         """ Set trajectory parameters """
@@ -285,7 +285,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
             self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt,
                                            ax=choice([-1,1])*3*self.progress["curve"],
                                            ay=choice([-1,1])*3*self.progress["curve"],
-                                           az=choice([-1,1])*1*self.progress["curve"],
+                                           az=choice([-1,1])*1.5*self.progress["curve"],
                                            f1=choice([-1,1])*0.5*self.progress["curve"],
                                            f2=choice([-1,1])*0.5*self.progress["curve"],
                                            f3=choice([-1,1])*0.25*self.progress["curve"])
