@@ -35,8 +35,9 @@ def time_derivative(f,qq,qqd,xx,xxd,t):
     return dfdt
 
 def dual_tanh(x):
-    mg = 2.7468
-    max_thrust = 15.7837
+    mg = 8.19135  # mini: 2.7468
+    max_thrust = 30.0  # mini: 15.7837
     tanh1 = mg * (1 + np.tanh(3 * x + 2)) / 2
     tanh2 = (max_thrust - mg) * (1 + np.tanh(3 * x - 2)) / 2
     return tanh1 + tanh2
+

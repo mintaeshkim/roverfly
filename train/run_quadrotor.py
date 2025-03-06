@@ -147,13 +147,13 @@ def main():
 
     model = PPO('MlpPolicy',  # CustomActorCriticPolicy,
                 env=env,
-                learning_rate=3e-4,
+                learning_rate=1e-4,
                 n_steps=n_steps,
                 batch_size=batch_size,
                 gamma=0.99,
                 gae_lambda=0.98,
                 clip_range=linear_schedule(0.05),
-                ent_coef=0.01, # Makes PPO explore
+                ent_coef=0.0, # 0.001
                 verbose=1,
                 policy_kwargs={'activation_fn':activation_fn, 'net_arch':net_arch},
                 tensorboard_log=log_path,

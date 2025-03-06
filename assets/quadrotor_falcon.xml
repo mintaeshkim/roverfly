@@ -1,7 +1,7 @@
 <mujoco model="quadrotor_white_falcon">
     <!-- <include file="empty_world_center.xml" /> -->
     <compiler angle="degree" coordinate="local"/>
-    <option timestep="0.001" gravity="0 0 -9.81" density="1.225" viscosity="1.789e-5" integrator="RK4" />
+    <option timestep="0.002" gravity="0 0 -9.81" density="1.225" viscosity="1.789e-5" integrator="RK4" />
     <default>
         <geom contype="0" conaffinity="0" condim="1" solref="0.001 1" density="0"/>
         <default class="collision">

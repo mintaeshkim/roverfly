@@ -5,7 +5,7 @@ parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.append(os.path.join(parent_dir))
 sys.path.append(os.path.join(parent_dir, 'envs'))
 import numpy as np
-from numpy import abs, arccos, asarray, clip, concatenate, copy, exp, mean, pi, round, sum, sqrt, zeros
+from numpy import abs, asarray, clip, concatenate, copy, exp, mean, pi, round, sum, sqrt, tanh, zeros
 from numpy.random import choice, uniform, normal
 from numpy.linalg import inv, norm
 from typing import Dict, Union
@@ -45,16 +45,16 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.body_id = self.model.body(name="quadrotor").id
         self.env_randomizer = EnvRandomizer(model=self.model)
         self.frame_skip = frame_skip
-        self.control_scheme = "srt"  # "ctbr"
+        self.control_scheme = "ctbr"  # "srt"
         
         ##################################################
         #################### DYNAMICS ####################
         ##################################################
         # region
-        self.sim_freq: float       = 500.0 if self.control_scheme == "ctbr" else 1000.0
         self.policy_freq: float    = 100.0
-        self.sim_dt: float         = 1 / self.sim_freq
+        self.sim_freq: float       = 500.0 if self.control_scheme == "ctbr" else self.policy_freq
         self.policy_dt: float      = 1 / self.policy_freq
+        self.sim_dt: float         = 1 / self.sim_freq
         self.num_sims_per_env_step = int(self.sim_freq // self.policy_freq)
         # endregion
         ##################################################
@@ -91,7 +91,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer          = deque(zeros((self.history_len, self.s_dim)), maxlen=self.history_len)  # [x, R, v, ω]
         self.d_buffer          = deque(zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
-        self.action_offset     = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else -0.46 * np.ones(4)
+        self.action_offset     = np.zeros(4) if self.control_scheme == "ctbr" else -0.46 * np.ones(4)
         self.force_offset      = 2.0 * np.ones(4)  # Warm start
         self.action_last       = self.action_offset
         self.num_episode       = 0
@@ -141,9 +141,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.mQ = 0.835
         self.mP = 0.1
         self.g = 9.81
-        self.JQ = np.array([[0.49, 0, 0],
-                            [0, 0.53, 0],
-                            [0, 0, 0.98]]) * 1e-2
+        self.JQ = np.array([[0.49, 0.00055, 0.002],
+                            [0.00055, 0.53, 0.00054],
+                            [0.002, 0.00054, 0.98]]) * 1e-2
         self.l = 0.1524
         self.d = self.l / sqrt(2)
         self.κ = 0.025
@@ -168,7 +168,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.actual_forces = self.force_offset
 
         # Delay Parameters (From ground station to quadrotor)
-        self.delay_range = [0.01, 0.04]  # 10 to 40 ms
+        self.delay_range = [0.01, 0.03]  # 10 to 30 ms
         # To simulate the delay for data transmission
         self.action_queue_len = int(self.delay_range[1] / self.policy_dt) + 1
         self.delay_time = uniform(low=self.delay_range[0], high=self.delay_range[1])
@@ -176,6 +176,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         [self.action_queue.append([self.data.time, self.action_last]) for _ in range(self.action_queue_len)]
         # endregion
 
+        # Disturbance Parameters
+        self.disturbance_duration_range = [0, 0.5]  # Impulse
+        self.force_disturbance_range = [-0.25, 0.25]  # N
+        self.torque_disturbance_range = [-0.0025, 0.0025]  # N
         self.disturbance_duration = 0
         self.disturbance_start = 0
 
@@ -206,7 +210,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             f"Observation Space: {self.observation_space}\n"
             f"Time step (sec): {self.dt}\n"
         )
-
         print(env_info)
         print(separator)
 
@@ -253,32 +256,19 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         """ TEST """
         # self.progress['setpoint'] = 1.0
         # self.progress['curve'] = 0.6
-
-        """ Choose task """
-        if self.progress['setpoint'] < 0.5:
-            self.stage = 1
-            self.traj_type = choice(['setpoint', 'curve'], p=[0.9, 0.1])
-        else:
-            self.stage = 2
-            self.traj_type = choice(['setpoint', 'curve'], p=[0.1, 0.9])
-
-        """ TEST """
-        # self.stage = 2
         # self.traj_type = 'curve'
 
         """ Set trajectory parameters """
         if self.traj_type == 'setpoint':
             self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
-            self.difficulty = self.stage * self.progress["setpoint"]
         if self.traj_type == 'curve':
             self.traj = ut.CrazyTrajectory(tf=self.max_timesteps*self.policy_dt,
                                            ax=choice([-1,1])*3*self.progress["curve"],
                                            ay=choice([-1,1])*3*self.progress["curve"],
-                                           az=choice([-1,1])*3*self.progress["curve"],
+                                           az=choice([-1,1])*1.5*self.progress["curve"],
                                            f1=choice([-1,1])*0.5*self.progress["curve"],
                                            f2=choice([-1,1])*0.5*self.progress["curve"],
-                                           f3=choice([-1,1])*0.5*self.progress["curve"])
-            self.difficulty = self.stage * self.progress["curve"]
+                                           f3=choice([-1,1])*0.25*self.progress["curve"])
             
         if self.is_full_traj: self.traj = ut.FullCrazyTrajectory(tf=45, traj=self.traj)
 
@@ -303,17 +293,15 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.aQd = zeros((self.max_timesteps + self.history_len, 3), dtype=np.float32)
         for i in range(self.max_timesteps + self.history_len):
             self.xQd[i], self.vQd[i], self.aQd[i] = self.traj.get(i * self.policy_dt)
-        self.x_offset = 3 * np.array([uniform(-1, 1), uniform(-1, 1), 0 if self.is_full_traj else 2 * uniform(0, 1)])
+        self.x_offset = 3 * np.array([uniform(-1, 1), uniform(-1, 1), 0 if self.is_full_traj else 2 * uniform(0.5, 1)])
         self.xQd += self.x_offset
         self.goal_pos = self.xQd[-1]
 
     def _set_initial_state(self):
-        self.perturbation = self.progress[self.traj_type]
-
-        wx = 0.05 * uniform(0, self.perturbation)
-        watt = (pi/36) * uniform(0, self.perturbation)
-        wv = 0.1 * uniform(0, self.perturbation)
-        wω = (pi/18) * uniform(0, self.perturbation)
+        wx = 0.1 * uniform(0, self.progress[self.traj_type])
+        watt = (pi/12) * uniform(0, self.progress[self.traj_type])
+        wv = 0.2 * uniform(0, self.progress[self.traj_type])
+        wω = (pi/6) * uniform(0, self.progress[self.traj_type])
         
         xQ = self.xQd[0] + uniform(size=3, low=-wx, high=wx)
         attQ = euler2quat_raw(quat2euler_raw(self.init_qpos[3:7]) + uniform(size=3, low=-watt, high=watt))
@@ -424,21 +412,23 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             self.data.xfrc_applied[self.body_id][:3] = downwash
 
     def _apply_disturbance(self):
-        if self.data.time > 2 and  self.timestep % self.policy_freq == 0:
-            self.disturbance_duration = choice([0, 1, 2, 3, 4, 5], p=[0.5, 0.1, 0.1, 0.1, 0.1, 0.1])
-            self.disturbance_start = self.timestep
-
-        # Apply disturbance if within duration
-        if self.timestep - self.disturbance_start < self.disturbance_duration:
-            self.data.xfrc_applied[self.body_id][:3] = uniform(low=-1, high=1, size=3)
+        if self.data.time - self.disturbance_start < self.disturbance_duration:
+            pass
+        elif self.data.time - self.disturbance_start < self.disturbance_duration + 1:
+            self.disturbance_wrench = np.zeros(6)
         else:
-            self.data.xfrc_applied[self.body_id][:3] = zeros(3)
+            self.disturbance_duration = uniform(low=self.disturbance_duration_range[0], high=self.disturbance_duration_range[1])
+            force = uniform(low=self.force_disturbance_range[0], high=self.force_disturbance_range[1], size=3)    # Force  [N]
+            torque = uniform(low=self.torque_disturbance_range[0], high=self.torque_disturbance_range[1], size=3) # Torque [Nm]
+            self.disturbance_wrench = concatenate([force, torque])
+            self.disturbance_start = self.data.time
+        self.data.xfrc_applied[self.body_id][0:6] = self.disturbance_wrench
 
     def _ctbr2srt(self, action):
-        zcmd = self.max_thrust * (action[0] + 1) / 2
-        dφd = action[1] / 2
-        dθd = action[2] / 2
-        dψd = action[3] / 2
+        zcmd = dual_tanh(action[0])
+        dφd = tanh(action[1])
+        dθd = tanh(action[2])
+        dψd = tanh(action[3])
 
         self.edφP = dφd - self.ω[0]
         self.edφI = clip(self.edφI + self.edφP * self.sim_dt, -self.clipI, self.clipI)
@@ -528,18 +518,17 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         attQ = quat2euler_raw(self.data.qpos[3:7])
 
         xQd = self.xQd[self.timestep] if self.timestep < self.max_timesteps else self.goal_pos
-        vQd = self.vQd[self.timestep] if self.timestep < self.max_timesteps else zeros(3)
+        vQd = self.vQd[self.timestep] if self.timestep < self.max_timesteps else np.zeros(3)
         exQ = norm(xQ - xQd)
         evQ = norm(vQ - vQd)
 
         if 5.0 <= self.time_in_sec <= 35.0 and xQ[2] < 0.01:  # Crash except for takeoff and landing
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Crashed | Time: {time} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Crashed | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
-                  traj_type=self.traj_type + " " + str(round(self.difficulty, 2)),
+                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   pos_err=round(exQ, 2),
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
@@ -547,11 +536,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         if self.time_in_sec <= 35.0 and exQ > self.pos_err_bound:
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Pos error: {pos_err} | Time: {time} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Pos error: {pos_err} | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
-                  traj_type=self.traj_type + " " + str(round(self.difficulty, 2)),
+                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   pos_err=round(exQ, 2),
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
@@ -559,11 +547,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         elif self.time_in_sec <= 35.0 and evQ > self.vel_err_bound:
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Vel error: {vel_err} | Time: {time} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Vel error:  {vel_err} | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
-                  traj_type=self.traj_type + " " + str(round(self.difficulty, 2)),
+                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   vel_err=round(evQ, 2),
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
@@ -571,11 +558,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         elif not(abs(attQ) < pi/2).all():
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Att error: {att} | Time: {time} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Att error: {att} | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
-                  traj_type=self.traj_type + " " + str(round(self.difficulty, 2)),
+                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   att=round(attQ, 2),
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
@@ -586,11 +572,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             # self.test_record_Q.reset()
             self.num_episode += 1
             self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Max time: {time} | Final pos error: {pos_err} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Max time: {time} | Final pos error: {pos_err} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
-                  traj_type=self.traj_type + " " + str(round(self.difficulty, 2)),
+                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   time=round(self.time_in_sec, 2),
                   pos_err=round(exQ, 2),
                   rew=round(self.total_reward, 1)))
