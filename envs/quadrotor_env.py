@@ -248,6 +248,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
     def _reset_model(self):
         if not self.is_full_traj: self.max_timesteps = self.traj_timesteps
+        self.traj_type = choice(['setpoint', 'curve'], p=[0.5, 0.5])
 
         """ Compute progress """
         self.progress['setpoint'] = (mean(self.history_epi['setpoint']) / self.max_timesteps)
@@ -257,6 +258,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # self.progress['setpoint'] = 1.0
         # self.progress['curve'] = 0.6
         # self.traj_type = 'curve'
+        # self.action_record = np.empty((self.max_timesteps, self.a_dim))
 
         """ Set trajectory parameters """
         if self.traj_type == 'setpoint':
@@ -351,7 +353,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
     def step(self, action, restore=False):
         # 1. Simulate for Single Time Step
-        # print(action)
+        # if self.timestep < self.max_timesteps: self.action_record[self.timestep] = action
         self.action = action
         if self.is_delayed: self.action_queue.append([self.data.time, self.action])
         if self.is_full_traj: self._apply_downwash()
@@ -579,6 +581,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                   time=round(self.time_in_sec, 2),
                   pos_err=round(exQ, 2),
                   rew=round(self.total_reward, 1)))
+            # self.plot_action()
             return True
         else:
             return False
@@ -589,6 +592,29 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     def close(self):
         if self.mujoco_renderer is not None:
             self.mujoco_renderer.close()
+
+    def plot_action(self):
+        fig, axs = plt.subplots(4, 1, figsize=(12, 10))
+        timesteps = np.arange(self.max_timesteps)
+
+        axs[0].plot(timesteps, self.action_record[:, 0], label='collective thrust', linestyle='-')
+        axs[0].set_title('collective thrust')
+        axs[0].legend()
+
+        axs[1].plot(timesteps, self.action_record[:, 1], label='body rate x', linestyle='-')
+        axs[1].set_title('body rate x')
+        axs[1].legend()
+
+        axs[2].plot(timesteps, self.action_record[:, 2], label='body rate y', linestyle='-')
+        axs[2].set_title('body rate y')
+        axs[2].legend()
+
+        axs[3].plot(timesteps, self.action_record[:, 3], label='body rate z', linestyle='-')
+        axs[3].set_title('body rate z')
+        axs[3].legend()
+
+        plt.tight_layout()
+        plt.show()
 
 
 
