@@ -191,38 +191,6 @@ class SmoothTraj(Trajectory):
                    (np.array([self._t(l)]) @ self._acc_params)[0]
 
 
-class SmoothTraj5(SmoothTraj):
-    def compute_traj_params(self):
-        a = self._xf - self._x0
-        self._pos_params = np.array([self._x0, np.zeros(3), np.zeros(3), 10*a, -15*a, 6*a])
-        self._vel_params = np.array([np.zeros(3), 2*np.zeros(3), 3*10*a, 4*(-15)*a, 5*6*a, np.zeros(3)])
-        self._acc_params = np.array([np.zeros(3), 6*10*a, 12*(-15)*a, 20*6*a, np.zeros(3), np.zeros(3)])
-
-
-class SmoothTraj3(SmoothTraj):
-    def __init__(self, x0, xf, tf):
-        super().__init__(x0, xf, tf)
-        self._t = lambda l: np.array([1., l, l**2, l**3])
-
-    def compute_traj_params(self):
-        a = self._xf - self._x0
-        self._pos_params = np.array([self._x0, np.zeros(3), 3*a, -2*a])
-        self._vel_params = np.array([np.zeros(3), 6*a, -6*a, np.zeros(3)])
-        self._acc_params = np.array([6*a, -12*a, np.zeros(3), np.zeros(3)])
-
-
-class SmoothTraj1(SmoothTraj):
-    def __init__(self, x0, xf, tf):
-        super().__init__(x0, xf, tf)
-        self._t = lambda l: np.array([1., l])
-
-    def compute_traj_params(self):
-        a = self._xf - self._x0
-        self._pos_params = np.array([self._x0, a])
-        self._vel_params = np.array([a, np.zeros(3)])
-        self._acc_params = np.array([np.zeros(3), np.zeros(3)])
-
-
 class CircularTraj(Trajectory):
     def __init__(self, r=3, origin=np.zeros(3), w=2*np.pi*0.05, tf=100, accel_duration=10):
         super().__init__(tf)
@@ -247,27 +215,8 @@ class CircularTraj(Trajectory):
         return x, v, a
 
 
-class SmoothSineTraj(SmoothTraj):
-    def compute_traj_params(self):
-        self._pos_offset = 0.5 * (self._xf + self._x0)
-        self._pos_amp = 0.5 * (self._xf - self._x0)
-        self._vel_amp = 0.5 * (self._xf - self._x0) * (np.pi / self._tf)
-        self._acc_amp = -0.5 * (self._xf - self._x0) * (np.pi / self._tf)**2
-
-    def get(self, t):
-        if t >= self._tf:
-            return self._xf, np.zeros(3), np.zeros(3)
-        elif t <= 0:
-            return self._x0, np.zeros(3), np.zeros(3)
-        else:
-            x = self._pos_offset + self._pos_amp * np.sin(t * np.pi / self._tf - np.pi / 2)
-            v = self._vel_amp * np.cos(t * np.pi / self._tf - np.pi / 2)
-            a = self._acc_amp * np.sin(t * np.pi / self._tf - np.pi / 2)
-            return x, v, a
-
-
 class CrazyTrajectory(Trajectory):
-    def __init__(self, tf=30, ax=5, ay=5, az=5, f1=0.5, f2=0.5, f3=0.5):
+    def __init__(self, tf=30, ax=3, ay=3, az=3, f1=0.5, f2=0.5, f3=0.25):
         super().__init__(tf)
         alpha, beta = 5.0, 5.0
         self.ax, self.ay, self.az = [a * np.random.beta(alpha, beta) for a in (ax, ay, az)]
@@ -322,60 +271,9 @@ class CrazyTrajectory(Trajectory):
             return self.compute(25)[0], np.zeros(3), np.zeros(3)  # Maintain hovering at the final position
         return self.compute(t)
 
-        
-class SmoothTrajClipped(Trajectory):
-    def __init__(self, x0, xf, max_velocity=5.0, max_acceleration=10.0):
-        self._x0 = np.array(x0)
-        self._xf = np.array(xf)
-        self._max_velocity = max_velocity  # m/s
-        self._max_acceleration = max_acceleration  # m/s^2
-
-        self._tf = self._compute_time()
-        self._compute_traj_params()
-
-    def _compute_time(self):
-        # Initial guess for tf
-        tf = 5.0
-        while True:
-            self._tf = tf
-            self._compute_traj_params()
-            max_vel, max_acc = self._compute_max_vel_acc()
-            if max_vel <= self._max_velocity and max_acc <= self._max_acceleration:
-                break
-            tf *= 1.1  # Increase tf to reduce velocity and acceleration
-        return tf
-
-    def _compute_max_vel_acc(self):
-        t_values = np.linspace(0, self._tf, 100)
-        max_vel = 0
-        max_acc = 0
-        for t in t_values:
-            _, v, a = self.get(t)
-            max_vel = max(max_vel, np.linalg.norm(v))
-            max_acc = max(max_acc, np.linalg.norm(a))
-        return max_vel, max_acc
-
-    def _compute_traj_params(self):
-        # Compute cubic polynomial coefficients
-        self._a0 = self._x0
-        self._a1 = np.zeros(3)
-        self._a2 = 3 * (self._xf - self._x0) / (self._tf ** 2)
-        self._a3 = -2 * (self._xf - self._x0) / (self._tf ** 3)
-
-    def get(self, t):
-        if t < 0:
-            return self._x0, np.zeros(3), np.zeros(3)
-        elif t > self._tf:
-            return self._xf, np.zeros(3), np.zeros(3)
-        else:
-            x = self._a0 + self._a1 * t + self._a2 * t ** 2 + self._a3 * t ** 3
-            v = self._a1 + 2 * self._a2 * t + 3 * self._a3 * t ** 2
-            a = 2 * self._a2 + 6 * self._a3 * t
-            return x, v, a
-
 
 class CrazyTrajectoryPayload(Trajectory):
-    def __init__(self, tf=10, ax=5, ay=5, az=5, f1=0.5, f2=0.5, f3=0.5):
+    def __init__(self, tf=30, ax=3, ay=3, az=3, f1=0.5, f2=0.5, f3=0.25):
         super().__init__(tf)
         alpha_param, beta_param = 5.0, 5.0
         self.ax = ax * np.random.beta(alpha_param, beta_param)
@@ -391,40 +289,59 @@ class CrazyTrajectoryPayload(Trajectory):
         self.phiz = np.random.choice([np.pi/2, 3*np.pi/2])
 
         self.mP = 0.1
-        self.g = 9.8
+        self.g = 9.81
         self.e3 = np.array([0,0,1])
 
-    def get(self, t):
-        w1 = 2 * np.pi * self.f1
-        w2 = 2 * np.pi * self.f2
-        w3 = 2 * np.pi * self.f3
+    def window(self, t):
+        """Cosine window function for smooth velocity transitions at t=2s and t=tf-2s"""
+        if t < 2 or t > self._tf - 2:
+            return 0  # Hovering state (no movement)
+        elif 2 <= t < 4:
+            return 0.5 * (1 - np.cos(np.pi * (t - 2) / 2))  # Smooth transition start
+        elif self._tf - 4 < t <= self._tf - 2:
+            return 0.5 * (1 - np.cos(np.pi * (self._tf - 2 - t) / 2))  # Smooth transition end
+        return 1  # Full trajectory motion
+
+    def d_window(self, t):
+        """Derivative of the window function for velocity adjustment"""
+        if 2 <= t < 4:
+            return 0.5 * (np.pi / 2) * np.sin(np.pi * (t - 2) / 2)
+        elif self._tf - 4 < t <= self._tf - 2:
+            return -0.5 * (np.pi / 2) * np.sin(np.pi * (self._tf - 2 - t) / 2)
+        return 0  # No change in hovering state
+
+    def compute(self, t):
+        """Compute trajectory with smooth transition"""
+        w1, w2, w3 = [2 * np.pi * f for f in (self.f1, self.f2, self.f3)]
+        win = self.window(t)
+        d_win = self.d_window(t)
 
         x = np.array([
-            self.ax * (1 - np.cos(w1 * t + self.phix)),
-            self.ay * (1 - np.cos(w2 * t + self.phiy)),
-            self.az * (1 - np.cos(w3 * t + self.phiz))
+            win * self.ax * (1 - np.cos(w1 * t + self.phix)),
+            win * self.ay * (1 - np.cos(w2 * t + self.phiy)),
+            win * self.az * (1 - np.cos(w3 * t + self.phiz))
         ])
         v = np.array([
-            self.ax * np.sin(w1 * t + self.phix) * w1,
-            self.ay * np.sin(w2 * t + self.phiy) * w2,
-            self.az * np.sin(w3 * t + self.phiz) * w3
+            win * self.ax * np.sin(w1 * t + self.phix) * w1 + d_win * self.ax * (1 - np.cos(w1 * t + self.phix)),
+            win * self.ay * np.sin(w2 * t + self.phiy) * w2 + d_win * self.ay * (1 - np.cos(w2 * t + self.phiy)),
+            win * self.az * np.sin(w3 * t + self.phiz) * w3 + d_win * self.az * (1 - np.cos(w3 * t + self.phiz))
         ])
         a = np.array([
-            self.ax * np.cos(w1 * t + self.phix) * w1 * w1,
-            self.ay * np.cos(w2 * t + self.phiy) * w2 * w2,
-            self.az * np.cos(w3 * t + self.phiz) * w3 * w3
+            win * self.ax * np.cos(w1 * t + self.phix) * w1 * w1 + 2 * d_win * self.ax * np.sin(w1 * t + self.phix) * w1,
+            win * self.ay * np.cos(w2 * t + self.phiy) * w2 * w2 + 2 * d_win * self.ay * np.sin(w2 * t + self.phiy) * w2,
+            win * self.az * np.cos(w3 * t + self.phiz) * w3 * w3 + 2 * d_win * self.az * np.sin(w3 * t + self.phiz) * w3
         ])
         da = np.array([
-            -self.ax * np.sin(w1 * t + self.phix) * w1 * w1 * w1,
-            -self.ay * np.sin(w2 * t + self.phiy) * w2 * w2 * w2,
-            -self.az * np.sin(w3 * t + self.phiz) * w3 * w3 * w3
+            -win * self.ax * np.sin(w1 * t + self.phix) * w1 * w1 * w1 + 3 * d_win * self.ax * np.cos(w1 * t + self.phix) * w1 * w1,
+            -win * self.ay * np.sin(w2 * t + self.phiy) * w2 * w2 * w2 + 3 * d_win * self.ay * np.cos(w2 * t + self.phiy) * w2 * w2,
+            -win * self.az * np.sin(w3 * t + self.phiz) * w3 * w3 * w3 + 3 * d_win * self.az * np.cos(w3 * t + self.phiz) * w3 * w3
         ])
         d2a = np.array([
-            -self.ax * np.cos(w1 * t + self.phix) * w1 * w1 * w1 * w1,
-            -self.ay * np.cos(w2 * t + self.phiy) * w2 * w2 * w2 * w2,
-            -self.az * np.cos(w3 * t + self.phiz) * w3 * w3 * w3 * w3
+            -win * self.ax * np.cos(w1 * t + self.phix) * w1 * w1 * w1 * w1 - 4 * d_win * self.ax * np.sin(w1 * t + self.phix) * w1 * w1 * w1,
+            -win * self.ay * np.cos(w2 * t + self.phiy) * w2 * w2 * w2 * w2 - 4 * d_win * self.ay * np.sin(w2 * t + self.phiy) * w2 * w2 * w2,
+            -win * self.az * np.cos(w3 * t + self.phiz) * w3 * w3 * w3 * w3 - 4 * d_win * self.az * np.sin(w3 * t + self.phiz) * w3 * w3 * w3
         ])
-        
+
         Tp = -self.mP * (a + self.g * self.e3)
         norm_Tp = np.linalg.norm(Tp)
         q = Tp / norm_Tp
@@ -433,11 +350,19 @@ class CrazyTrajectoryPayload(Trajectory):
         dnorm_Tp = 1 / norm_Tp * np.dot(Tp, dTp)
         dq = (dTp - q * dnorm_Tp) / norm_Tp
 
-        d2Tp = -self.mP * d2a ;
+        d2Tp = -self.mP * d2a
         d2norm_Tp = (np.dot(dTp, dTp) + np.dot(Tp, d2Tp) - dnorm_Tp**2) / norm_Tp
         d2q = (d2Tp - dq * dnorm_Tp - q * d2norm_Tp - dq * dnorm_Tp) / norm_Tp
 
         return x, v, a, da, q, dq, d2q
+
+    def get(self, t):
+        """Return desired state at time t, maintaining hovering outside trajectory range"""
+        if t < 2:
+            return self.compute(0)[0], np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)
+        elif t > self._tf - 2:
+            return self.compute(self._tf - 2)[0], np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)
+        return self.compute(t)
 
 
 class CircularTrajPayload(Trajectory):
@@ -493,50 +418,6 @@ class CircularTrajPayload(Trajectory):
 
         return x, v, a, da, q, dq, d2q
 
-
-class SmoothTraj5Payload(Trajectory):
-    def __init__(self, x0, xf, tf=10):
-        super().__init__(tf)
-        self._x0 = np.array(x0)
-        self._xf = np.array(xf)
-        self.compute_traj_params()
-
-        self.mP = 0.1
-        self.g = 9.8
-        self.e3 = np.array([0, 0, 1])
-
-    def compute_traj_params(self):
-        a = self._xf - self._x0
-        self._pos_params = np.array([self._x0, np.zeros(3), np.zeros(3), 10 * a, -15 * a, 6 * a])
-        self._vel_params = np.array([np.zeros(3), 2 * np.zeros(3), 3 * 10 * a, 4 * (-15) * a, 5 * 6 * a, np.zeros(3)])
-        self._acc_params = np.array([np.zeros(3), 6 * 10 * a, 12 * (-15) * a, 20 * 6 * a, np.zeros(3), np.zeros(3)])
-
-    def get(self, t):
-        tau = t / self._tf
-        tau_vec = np.array([1, tau, tau**2, tau**3, tau**4, tau**5]).reshape(-1, 1)
-
-        x = np.dot(self._pos_params.T, tau_vec).flatten()
-        v = np.dot(self._vel_params.T, tau_vec).flatten()
-        a = np.dot(self._acc_params.T, tau_vec).flatten()
-        
-        # Compute higher-order derivatives for payload
-        da = np.gradient(a, t)
-        d2a = np.gradient(da, t)
-
-        Tp = -self.mP * (a + self.g * self.e3)
-        norm_Tp = np.linalg.norm(Tp)
-        q = Tp / norm_Tp
-
-        dTp = -self.mP * da
-        dnorm_Tp = 1 / norm_Tp * np.dot(Tp, dTp)
-        dq = (dTp - q * dnorm_Tp) / norm_Tp
-
-        d2Tp = -self.mP * d2a
-        d2norm_Tp = (np.dot(dTp, dTp) + np.dot(Tp, d2Tp) - dnorm_Tp**2) / norm_Tp
-        d2q = (d2Tp - dq * dnorm_Tp - q * d2norm_Tp - dq * dnorm_Tp) / norm_Tp
-
-        return x, v, a, da, q, dq, d2q
-    
 
 class CrazyTrajectoryPayloadSwing(Trajectory):
     def __init__(self, tf=10, ax=5, ay=5, az=5, f1=0.5, f2=0.5, f3=0.5):
@@ -977,10 +858,14 @@ class FullCrazyTrajectory(Trajectory):
 # endregion
 
 if __name__ == "__main__":
-    traj = FullCrazyTrajectory(tf=45, traj=CrazyTrajectory(tf=30, ax=1, ay=1, az=1, f1=0.5, f2=0.5, f3=0.5))
+    # traj = FullCrazyTrajectory(tf=45, traj=CrazyTrajectory(tf=30, ax=1, ay=1, az=1, f1=0.5, f2=0.5, f3=0.5))
     # traj = FullCrazyTrajectory(tf=45, traj=CrazyTrajectory(tf=30, ax=0, ay=0, az=0, f1=0, f2=0, f3=0))
     # traj.plot()
     # traj.plot3d()
 
-    crazy_traj = CrazyTrajectory()
-    crazy_traj.plot()
+    # crazy_traj = CrazyTrajectory()
+    # crazy_traj.plot()
+
+    crazy_payload_traj = CrazyTrajectoryPayload()
+    crazy_payload_traj.plot()
+    crazy_payload_traj.plot3d_payload()

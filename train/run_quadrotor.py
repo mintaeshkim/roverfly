@@ -15,6 +15,7 @@ import torch as th
 import numpy as np
 from envs.quadrotor_env import QuadrotorEnv
 from envs.quadrotor_mini_env import QuadrotorMiniEnv
+from envs.quadrotor_payload_env import QuadrotorPayloadEnv
 from train.feature_extractor import CustomFeaturesExtractor
 import argparse
 import time
@@ -29,7 +30,7 @@ def parse_arguments():
     parser.add_argument('--device', type=str, default='cuda', help='Provide device info.')
     parser.add_argument('--num_envs', type=int, default=8, help='Provide number of parallel environments.')
     parser.add_argument('--num_steps', type=int, default=1e+8, help='Provide number of steps.')
-    parser.add_argument('--quad', type=str, default='mini', help='Choose falcon or mini environment.')
+    parser.add_argument('--env', type=str, default='mini', help='Choose environment [falcon, mini, payload].')
     parser.add_argument('--checkpoint', type=str, default=None, help='Loading pretrained model, provide model ID')
 
     args = parser.parse_args()
@@ -84,9 +85,10 @@ def main():
     # case switch for falcon or mini
     env_dict = {
         'falcon': QuadrotorEnv,
-        'mini': QuadrotorMiniEnv
+        'mini': QuadrotorMiniEnv,
+        'payload': QuadrotorPayloadEnv
     }
-    QuadEnv = env_dict.get(args_dict['quad'], QuadrotorMiniEnv)
+    QuadEnv = env_dict.get(args_dict['env'], QuadrotorEnv)
     
     # Parallel environment
     def create_env(seed=0):

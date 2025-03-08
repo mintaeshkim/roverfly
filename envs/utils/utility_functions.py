@@ -41,3 +41,10 @@ def dual_tanh(x):
     tanh2 = (max_thrust - mg) * (1 + np.tanh(3 * x - 2)) / 2
     return tanh1 + tanh2
 
+def dual_tanh_payload(x):
+    mg = 8.28945  # mini: 2.7468
+    max_thrust = 30.0  # mini: 15.7837
+    tanh1 = mg * (1 + np.tanh(3 * x + 2)) / 2
+    tanh2 = (max_thrust - mg) * (1 + np.tanh(3 * x - 2)) / 2
+    return tanh1 + tanh2
+

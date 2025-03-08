@@ -1,7 +1,7 @@
 import mujoco as mj
 
 
-model = mj.MjModel.from_xml_path("../../assets/quadrotor_x_cfg_payload_multiple.xml")
+model = mj.MjModel.from_xml_path("../../assets/quadrotor_falcon_payload.xml")
 # model = mj.MjModel.from_xml_path("../../assets/quadrotor_x_cfg_payload_nominal.xml")
 data = mj.MjData(model)
 
@@ -33,12 +33,8 @@ def print_body_state(data, model, body_name):
 # print_body_state(data, model, 'hook_core_1')    # ori = qpos[18:22], angvel = qvel[15:18]
 # print_body_state(data, model, 'hook_payload')   # ori = qpos[29:33], angvel = qvel[24:27]
 
-print_body_state(data, model, 'quadrotor_1')
-print_body_state(data, model, 'hook_core_1')
-print_body_state(data, model, 'quadrotor_2')
-print_body_state(data, model, 'hook_core_2')
-print_body_state(data, model, 'quadrotor_3')
-print_body_state(data, model, 'hook_core_3')
+print_body_state(data, model, 'quadrotor')
+print_body_state(data, model, 'hook_core')
 print_body_state(data, model, 'payload')
 print_body_state(data, model, 'hook_payload')
 

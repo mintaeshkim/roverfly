@@ -44,13 +44,13 @@ class EnvRandomizer(object):
         
         for gear in model.actuator_gear:
             gear *= 1.0 + uniform(low=-self.actuator_gear_noise_scale, high=self.actuator_gear_noise_scale, size=len(gear))
-
-        # print("body_ipos: \n", model.body_ipos[1])
-        # print("body_iquat: \n", model.body_iquat[1])
-        # print("body_mass: \n", model.body_mass[1])
-        # print("body_inertia: \n", model.body_inertia[1])
-        # R = quat2rot(model.body_iquat[1])
-        # print("full_inertia: \n", R @ np.diag(model.body_inertia[1]) @ R.T)
+        
+        # print("body_ipos: \n", model.body_ipos)
+        # print("body_iquat: \n", model.body_iquat)
+        # print("body_mass: \n", model.body_mass)
+        # print("body_inertia: \n", model.body_inertia)
+        # R = quat2rot(model.body_iquat)
+        # print("full_inertia: \n", R @ np.diag(model.body_inertia) @ R.T)
         # print("actuator_gear: \n", model.actuator_gear)
 
         return model
@@ -104,10 +104,10 @@ def quaternion_multiply(q1, q2):
 
 
 if __name__ == "__main__":
-    xml_file = "../../assets/quadrotor_mini.xml"
+    xml_file = "../../assets/quadrotor_falcon_payload.xml"
     model = mj.MjModel.from_xml_path(xml_file)
     env_randomizer = EnvRandomizer(model=model)
-    for _ in range(1):
+    for _ in range(5):
         env_randomizer.set_noise_scale(progress=0.2)
         env_randomizer.randomize_env(model=model)
         print()

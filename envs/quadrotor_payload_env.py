@@ -5,7 +5,7 @@ parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.append(os.path.join(parent_dir))
 sys.path.append(os.path.join(parent_dir, 'envs'))
 import numpy as np
-from numpy import abs, clip, concatenate, copy, exp, mean, pi, round, sum, sqrt, cos, sin
+from numpy import abs, asarray, clip, concatenate, copy, exp, mean, ones, pi, round, sum, sqrt, tanh, zeros
 from numpy.random import choice, uniform, normal
 from numpy.linalg import inv, norm
 from typing import Dict, Union
@@ -19,22 +19,21 @@ from mujoco_gym.mujoco_env import MujocoEnv
 # ETC
 import envs.utils.utility_trajectory as ut
 from envs.utils.env_randomizer import EnvRandomizer
-from envs.utils.geo_tools import hat, vee
 from envs.utils.utility_functions import *
 from envs.utils.rotation_transformations import *
 import time
 import matplotlib.pyplot as plt
 
 
-DEFAULT_CAMERA_CONFIG = {"trackbodyid": 0, "distance": 10.0}
+DEFAULT_CAMERA_CONFIG = {"trackbodyid": 0, "distance": 15.0}
   
 class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     metadata = {"render_modes": ["human", "rgb_array", "depth_array"]}
     
     def __init__(
         self,
-        max_timesteps = 2000,  # 20 sec
-        xml_file: str = "../assets/quadrotor_x_cfg_payload.xml",
+        max_timesteps:int = 4500,
+        xml_file: str = "../assets/quadrotor_falcon_payload.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
         reset_noise_scale: float = 1.0,
@@ -46,56 +45,61 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.body_id = self.model.body(name="quadrotor").id
         self.env_randomizer = EnvRandomizer(model=self.model)
         self.frame_skip = frame_skip
-        self.control_scheme = "srt"  # "ctbr"
+        self.control_scheme = "ctbr"  # "srt"
+        np.random.seed(env_num)
         
         ##################################################
         #################### DYNAMICS ####################
         ##################################################
         # region
-        self.sim_freq: float       = 500.0
         self.policy_freq: float    = 100.0
-        self.sim_dt: float         = 1 / self.sim_freq
+        self.sim_freq: float       = 500.0 if self.control_scheme == "ctbr" else self.policy_freq
         self.policy_dt: float      = 1 / self.policy_freq
+        self.sim_dt: float         = 1 / self.sim_freq
         self.num_sims_per_env_step = int(self.sim_freq // self.policy_freq)
         # endregion
         ##################################################
         ###################### TIME ######################
         ##################################################
         # region
-        self.max_timesteps: int = max_timesteps
-        self.timestep: int      = 0
-        self.time_in_sec: float = 0.0
+        self.max_timesteps: int  = max_timesteps
+        self.timestep: int       = 0
+        self.time_in_sec: float  = 0.0
+        self.traj_timesteps: int = 3000
         # endregion
         ##################################################
         #################### BOOLEANS ####################
         ##################################################
         # region
-        self.is_action_bound   = False
         self.is_io_history     = True
         self.is_delayed        = True
         self.is_env_randomized = True
+        self.is_disturbance    = True
+        self.is_full_traj      = False
         # endregion
         ##################################################
         ################## OBSERVATION ###################
         ##################################################
         # region
-        self.env_num            = env_num
-        self.s_dim              = 24
-        self.a_dim              = 4
-        self.o_dim              = 300
-        self.history_len_short  = 5
-        self.history_len_long   = 10
-        self.history_len        = self.history_len_short
-        self.future_len         = 5
-        self.s_buffer           = deque(np.zeros((self.history_len, self.s_dim)), maxlen=self.history_len)
-        self.d_buffer           = deque(np.zeros((self.history_len, 12)), maxlen=self.history_len)
-        self.a_buffer           = deque(np.zeros((self.history_len, 4)), maxlen=self.history_len)
-        self.action_last        = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else 1.962 * np.ones(4)
-        self.num_episode        = 0
-        self.history_epi        = {'setpoint': deque([0]*10, maxlen=10), 'curve': deque([0]*10, maxlen=10)}
-        self.progress           = {'setpoint': 1e-3, 'curve': 1e-3}
-        self.action_space       = self._set_action_space()
-        self.observation_space  = self._set_observation_space()
+        self.env_num           = env_num
+        self.s_dim             = 24
+        self.a_dim             = 4
+        self.o_dim             = 300
+        self.history_len_short = 5
+        self.history_len_long  = 10
+        self.history_len       = self.history_len_short
+        self.future_len        = 5
+        self.s_buffer          = deque(zeros((self.history_len, self.s_dim)), maxlen=self.history_len)
+        self.d_buffer          = deque(zeros((self.history_len, 12)), maxlen=self.history_len)
+        self.a_buffer          = deque(zeros((self.history_len, 4)), maxlen=self.history_len)
+        self.action_offset     = zeros(4) if self.control_scheme == "ctbr" else -0.4 * ones(4)
+        self.force_offset      = 2.3 * np.ones(4)  # Warm start
+        self.action_last       = self.action_offset
+        self.num_episode       = 0
+        self.history_episode   = {'setpoint': deque([0]*10, maxlen=10), 'curve': deque([0]*10, maxlen=10)}
+        self.progress          = {'setpoint': 1e-3, 'curve': 1e-3}
+        self.action_space      = self._set_action_space()
+        self.observation_space = self._set_observation_space()
         # endregion
         ##################################################
         ##################### BOUNDS #####################
@@ -134,12 +138,13 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         ################### PD CONTROL ###################
         ##################################################
         # region
-        self.mQ = 0.8
+        # Quadrotor and payload characteristic values
+        self.mQ = 0.835
         self.mP = 0.1
         self.g = 9.81
-        self.JQ = np.array([[0.49, 0, 0],
-                            [0, 0.53, 0],
-                            [0, 0, 0.98]]) * 1e-2
+        self.JQ = np.array([[0.49, 0.00055, 0.002],
+                            [0.00055, 0.53, 0.00054],
+                            [0.002, 0.00054, 0.98]]) * 1e-2
         self.l = 0.1524
         self.d = self.l / sqrt(2)
         self.κ = 0.025
@@ -161,22 +166,34 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.tau_down = 0.1644
         self.rotor_max_thrust = 7.5  # 14.981  # N
         self.max_thrust = 30  # N
-        self.actual_forces = ((self.mP + self.mQ) * self.g / 4) * np.ones(4)
+        self.actual_forces = self.force_offset
 
         # Delay Parameters (From ground station to quadrotor)
-        self.delay_range = [0.01, 0.02]  # 10 to 20 ms
+        self.delay_range = [0.01, 0.03]  # 10 to 30 ms
         # To simulate the delay for data transmission
-        self.action_queue = deque([[self.data.time, self.action_last]], maxlen=int(self.delay_range[1] / self.policy_dt))
+        self.action_queue_len = int(self.delay_range[1] / self.policy_dt) + 1
+        self.delay_time = uniform(low=self.delay_range[0], high=self.delay_range[1])
+        self.action_queue = deque([None] * self.action_queue_len, maxlen=self.action_queue_len)
+        [self.action_queue.append([self.data.time, self.action_last]) for _ in range(self.action_queue_len)]
         # endregion
+
+        # Disturbance Parameters
+        self.disturbance_duration_range = [0, 0.5]  # Impulse
+        self.force_disturbance_range = [-0.25, 0.25]  # N
+        self.torque_disturbance_range = [-0.0025, 0.0025]  # N
+        self.disturbance_duration = 0
+        self.disturbance_start = 0
 
         self.time = 0
 
+    @property
+    def dt(self) -> float:
+        return self.model.opt.timestep * self.frame_skip
+
     def _set_action_space(self):
-        # CTBR
-        low = np.array([-1, -1, -1, -1])
-        high = np.array([1, 1, 1, 1])
-        if self.is_action_bound: self.action_space = Box(low=0.2*np.ones(4), high=0.8*np.ones(4))
-        else: self.action_space = Box(low=low, high=high)
+        lower_bound = np.full(self.a_dim, -1.0)
+        upper_bound = np.full(self.a_dim, 1.0)
+        self.action_space = Box(low=lower_bound, high=upper_bound, dtype=np.float32)
         return self.action_space
 
     def _set_observation_space(self):
@@ -186,20 +203,26 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         return observation_space
 
     def _init_env(self):
-        print("Environment {} created".format(self.env_num))
-        print("Sample action: {}".format(self.action_space.sample()))
-        print("Action Space: {}".format(np.array(self.action_space)))
-        print("Observation Space: {}".format(np.array(self.observation_space)))
-        print("Timestep: {}".format(self.policy_dt))
-        print("-"*100)
+        separator = "-" * 100
+        env_info = (
+            f"Environment {self.env_num} initialized.\n"
+            f"Sample action: {self.action_space.sample()}\n"
+            f"Action Space: {self.action_space}\n"
+            f"Observation Space: {self.observation_space}\n"
+            f"Time step (sec): {self.dt}\n"
+        )
+        print(env_info)
+        print(separator)
 
     def _init_history_ff(self):
         s_curr = copy(self._get_state_curr())
-        d_curr = concatenate([self.xQd[0] / self.pos_bound, self.xPd[0] / self.pos_bound, self.vQd[0] / self.vel_bound,  self.vPd[0] / self.vel_bound])
+        d_curr = concatenate([self.xQd[0] / self.pos_bound, self.xPd[0] / self.pos_bound, 
+                              self.vQd[0] / self.vel_bound, self.vPd[0] / self.vel_bound])
         a_curr = copy(self.action)
-        [self.s_buffer.append(s_curr) for _ in range(self.history_len)]
-        [self.d_buffer.append(d_curr) for _ in range(self.history_len)]
-        [self.a_buffer.append(a_curr) for _ in range(self.history_len)]
+
+        self.s_buffer.extend([s_curr] * self.history_len)
+        self.d_buffer.extend([d_curr] * self.history_len)
+        self.a_buffer.extend([a_curr] * self.history_len)
 
     def reset(self, seed=None, randomize=None):
         # super().reset(seed=self.env_num)        
@@ -215,130 +238,109 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     def _reset_env(self):
         self.timestep     = 0
         self.time_in_sec  = 0.0
-        self.action_last  = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else 1.962 * np.ones(4)
-        self.q_last       = np.array([0, 0, -1])
+        self.action_last  = self.action_offset
         self.total_reward = 0
         self.terminated   = None
         self.info         = {}
 
-        """ TEST """
-        # self.test_record_P = TestRecord(max_timesteps=self.max_timesteps,
-        #                                 record_object='P',
-        #                                 num_sims_per_env_step=self.num_sims_per_env_step)
-        # self.test_record_Q = TestRecord(max_timesteps=self.max_timesteps,
-        #                                 record_object='Q',
-        #                                 num_sims_per_env_step=self.num_sims_per_env_step)
-
     def _reset_model(self):
+        if not self.is_full_traj: self.max_timesteps = self.traj_timesteps
+        self.traj_type = choice(['setpoint', 'curve'], p=[0.5, 0.5])
+
         """ Compute progress """
-        self.progress['setpoint'] = (mean(self.history_epi['setpoint']) / self.max_timesteps)
-        self.progress['curve'] = (mean(self.history_epi['curve']) / self.max_timesteps)
+        self.progress['setpoint'] = (mean(self.history_episode['setpoint']) / self.max_timesteps)
+        self.progress['curve'] = (mean(self.history_episode['curve']) / self.max_timesteps)
         
         """ TEST """
         # self.progress['setpoint'] = 1.0
         # self.progress['curve'] = 0.6
-
-        """ Choose trajectory type """
-        if self.progress['setpoint'] < 0.5:
-            self.stage = 1
-            self.traj_type = choice(['setpoint', 'curve'], p=[0.9, 0.1])
-        else:
-            self.stage = 2
-            self.traj_type = choice(['setpoint', 'curve'], p=[0.1, 0.9])
-
-        # self.traj_type = 'setpoint'
         # self.traj_type = 'curve'
+        # self.action_record = np.empty((self.max_timesteps, self.a_dim))
 
         """ Set trajectory parameters """
         if self.traj_type == 'setpoint':
             self.traj = ut.CrazyTrajectoryPayload(tf=self.max_timesteps*self.policy_dt, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
-            self.difficulty = self.stage * self.progress["setpoint"]
         if self.traj_type == 'curve':
             self.traj = ut.CrazyTrajectoryPayload(tf=self.max_timesteps*self.policy_dt,
                                                   ax=choice([-1,1])*3*self.progress["curve"],
                                                   ay=choice([-1,1])*3*self.progress["curve"],
-                                                  az=choice([-1,1])*3*self.progress["curve"],
-                                                  f1=choice([-1,1])*0.4*self.progress["curve"],
-                                                  f2=choice([-1,1])*0.4*self.progress["curve"],
-                                                  f3=choice([-1,1])*0.4*self.progress["curve"])
-            self.difficulty = self.stage * self.progress["curve"]
+                                                  az=choice([-1,1])*1.5*self.progress["curve"],
+                                                  f1=choice([-1,1])*0.5*self.progress["curve"],
+                                                  f2=choice([-1,1])*0.5*self.progress["curve"],
+                                                  f3=choice([-1,1])*0.25*self.progress["curve"])
+            
+        if self.is_full_traj: self.traj = ut.FullCrazyTrajectory(tf=45, traj=self.traj)
 
         # self.traj.plot()
-        # self.traj.plot3d_payload()
+        # self.traj.plot3d()
 
-        """ Compute trajectory """
-        self.xPd = np.zeros((self.max_timesteps + self.history_len, 3))
-        self.vPd = np.zeros((self.max_timesteps + self.history_len, 3))
-        self.aPd = np.zeros((self.max_timesteps + self.history_len, 3))
-        self.daPd = np.zeros((self.max_timesteps + self.history_len, 3))
-        self.qd = np.zeros((self.max_timesteps + self.history_len, 3))
-        self.dqd = np.zeros((self.max_timesteps + self.history_len, 3))
-        self.d2qd = np.zeros((self.max_timesteps + self.history_len, 3))
-        self.xQd = np.zeros((self.max_timesteps + self.history_len, 3))
-        self.vQd = np.zeros((self.max_timesteps + self.history_len, 3))
+        """ Generate trajectory """
+        self._generate_trajectory()
+
+        """ Initial Perturbation """
+        self._set_initial_state()
+
+        """ Reset action """
+        self.action = self.action_offset
+        self.actual_forces = self.force_offset
+
+        return self._get_obs()
+
+    def _generate_trajectory(self):
+        self.xPd = zeros((self.max_timesteps + self.history_len, 3), dtype=np.float32)
+        self.vPd = zeros((self.max_timesteps + self.history_len, 3), dtype=np.float32)
+        self.aPd = zeros((self.max_timesteps + self.history_len, 3), dtype=np.float32)
+        self.daPd = zeros((self.max_timesteps + self.history_len, 3), dtype=np.float32)
+        self.qd = zeros((self.max_timesteps + self.history_len, 3), dtype=np.float32)
+        self.dqd = zeros((self.max_timesteps + self.history_len, 3), dtype=np.float32)
+        self.d2qd = zeros((self.max_timesteps + self.history_len, 3), dtype=np.float32)
+        self.xQd = zeros((self.max_timesteps + self.history_len, 3), dtype=np.float32)
+        self.vQd = zeros((self.max_timesteps + self.history_len, 3), dtype=np.float32)
         for i in range(self.max_timesteps + self.history_len):
             self.xPd[i], self.vPd[i], self.aPd[i], self.daPd[i], self.qd[i], self.dqd[i], self.d2qd[i] = self.traj.get(i * self.policy_dt)
             self.xQd[i] = self.xPd[i] - self.qd[i]
             self.vQd[i] = self.vPd[i] - self.dqd[i]
-        self.x_offset = self.pos_bound * uniform(size=3, low=-1, high=1)
+        self.x_offset = self.pos_bound * np.array([uniform(-1, 1), uniform(-1, 1), 0 if self.is_full_traj else 2 * uniform(0.5, 1)])
         self.xPd += self.x_offset
         self.xQd += self.x_offset
         self.goal_pos = self.xPd[-1]
-        self.dqd[0], self.d2qd[0] = np.zeros(3), np.zeros(3)
+        self.dqd[0], self.d2qd[0] = zeros(3), zeros(3)
 
-        """ Initial Perturbation """
-        # region
-        self.perturbation = self.progress[self.traj_type]
+    def _set_initial_state(self):
+        wx = 0.1 * uniform(0, self.progress[self.traj_type])
+        watt = (pi/12) * uniform(0, self.progress[self.traj_type])
+        wv = 0.2 * uniform(0, self.progress[self.traj_type])
+        wω = (pi/6) * uniform(0, self.progress[self.traj_type])
 
-        wx = 0.025 * uniform(0, self.perturbation)
-        watt = (pi/36) * uniform(0, self.perturbation)
-        wv = 0.1 * uniform(0, self.perturbation)
-        wω = (pi/18) * uniform(0, self.perturbation)
-
-        dPQ = 1.0 - 0.01 * uniform(0, self.perturbation)
+        dPQ = 1.0 - 0.01 * uniform(0, self.progress[self.traj_type])
         psi = uniform(0, 2*pi)
-        phi = (pi/4) * clip(normal(0, self.perturbation), -0.5, 0.5)
+        phi = (pi/3) * clip(normal(0, self.progress[self.traj_type]), -0.5, 0.5)
         
         xP = self.xPd[0] + wx
         xQ = xP + dPQ * np.array([cos(psi)*sin(phi), sin(psi)*sin(phi), cos(phi)]) + wx
-        attP = euler2quat_raw(quat2euler_raw(self.init_qpos[14:18]) + uniform(size=3, low=-watt, high=watt))
+        attP = euler2quat_raw(quat2euler_raw(self.init_qpos[10:14]) + uniform(size=3, low=-watt, high=watt))
         attQ = euler2quat_raw(quat2euler_raw(self.init_qpos[3:7]) + uniform(size=3, low=-watt, high=watt))
         vP = self.vPd[0] + uniform(size=3, low=-wv, high=wv)
         vQ = self.vPd[0] + uniform(size=3, low=-wv, high=wv)
-        ωP = self.init_qvel[12:15] + uniform(size=3, low=-wω, high=wω)
+        ωP = self.init_qvel[9:12] + uniform(size=3, low=-wω, high=wω)
         ωQ = self.init_qvel[3:6] + uniform(size=3, low=-wω, high=wω)
-        # endregion
         
-        qpos = concatenate([xQ, attQ, self.init_qpos[7:11], xP, attP, self.init_qpos[18:22]])
-        qvel = concatenate([vQ, ωQ, self.init_qvel[6:9], vP, ωP, self.init_qvel[15:18]])
+        qpos = concatenate([xQ, attQ, xP, attP])
+        qvel = concatenate([vQ, ωQ, vP, ωP])
         self.set_state(qpos, qvel)
 
-        self.action = np.array([-1, 0, 0, 0]) if self.control_scheme == "ctbr" else -0.4114 * np.ones(4)
-        self.actual_forces = ((self.mP + self.mQ) * self.g / 4) * np.ones(4)
-
-        return self._get_obs()
-
     def _reset_error(self):
-        self.edφI = 0
-        self.edθI = 0
-        self.edψI = 0
-
-        self.edφP_prev = 0
-        self.edθP_prev = 0
-        self.edψP_prev = 0
+        self.edφI, self.edθI, self.edψI = 0, 0, 0
+        self.edφP_prev, self.edθP_prev, self.edψP_prev = 0, 0, 0
 
     def _get_obs(self):
-        # Present
         self.obs_curr = self._get_obs_curr()  # 40
 
-        # Past
-        s_buffer = np.array(self.s_buffer, dtype=object).flatten()  # 120
-        d_buffer = np.array(self.d_buffer, dtype=object).flatten()  # 60
-        a_buffer = np.array(self.a_buffer, dtype=object)[-self.history_len:,:].flatten()  # 20
-        
+        s_buffer = asarray(self.s_buffer, dtype=np.float32).flatten()  # 120
+        d_buffer = asarray(self.d_buffer, dtype=np.float32).flatten()  # 60
+        a_buffer = asarray(self.a_buffer, dtype=np.float32).flatten()  # 20
         io_history = concatenate([s_buffer, d_buffer, a_buffer])  # 200
 
-        # Future
         xP_ff = self.xP - self.xPd[self.timestep : self.timestep + self.future_len]
         vP_ff = self.vP - self.vPd[self.timestep : self.timestep + self.future_len]
         xQd = self.xPd[self.timestep : self.timestep + self.future_len] - self.qd[self.timestep : self.timestep + self.future_len]
@@ -350,68 +352,43 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                           (xQ_ff @ self.RQ).flatten(),
                           (vQ_ff @ self.RQ).flatten()])  # 60
 
-        obs_full = concatenate([self.obs_curr, io_history, ff])  # 300
-
-        return obs_full
+        return concatenate([self.obs_curr, io_history, ff])  # 300
 
     def _get_obs_curr(self):
         self.s_curr = self._get_state_curr()  # 24
         
         self.exP = self.xP - self.xPd[self.timestep]
         self.evP = self.vP - self.vPd[self.timestep]
-        
-        # self.q = (self.xP - self.xQ) / norm(self.xP - self.xQ)
-        # self.dq = (self.q - self.q_last) / self.policy_dt
-        # self.q_last = self.q
-        # qd, dqd = self._get_qd()
-
-        # qd, dqd = self.qd[self.timestep], self.dqd[self.timestep]
-        # self.xQd = self.xPd[self.timestep] - qd
-        # self.vQd = self.vPd[self.timestep] - dqd
-
         self.exQ = self.xQ - self.xQd[self.timestep]
         self.evQ = self.vQ - self.vQd[self.timestep]
-
         self.e_curr = concatenate([self.RQ.T @ self.exP, self.RQ.T @ self.evP, self.RQ.T @ self.exQ, self.RQ.T @ self.evQ])
 
         obs_curr = concatenate([self.s_curr, self.e_curr, self.action])  # 40
-                                # self.RQ.T @ self.q, self.RQ.T @ self.dq, self.RQ.T @ qd, self.RQ.T @ dqd,  # 12
+
         return obs_curr
 
     def _get_state_curr(self):
-        self.xQ = self.data.qpos[0:3] + clip(normal(loc=0, scale=0.01, size=3), -0.01, 0.01)
+        self.xQ = self.data.qpos[0:3] + clip(normal(loc=0, scale=0.01, size=3), -0.0025, 0.0025)
         self.RQ = euler2rot(quat2euler_raw(self.data.qpos[3:7])
-                            + clip(normal(loc=0, scale=pi/60, size=3), -pi/60, pi/60))
-        self.xP = self.data.qpos[11:14] + clip(normal(loc=0, scale=0.01, size=3), -0.01, 0.01)
+                            + clip(normal(loc=0, scale=pi/60, size=3), -pi/120, pi/120))
+        self.xP = self.data.qpos[7:10] + clip(normal(loc=0, scale=0.01, size=3), -0.0025, 0.0025)
 
-        self.vQ = self.data.qvel[0:3] + clip(normal(loc=0, scale=0.02, size=3), -0.02, 0.02)
-        self.ωQ = self.data.qvel[3:6] + clip(normal(loc=0, scale=pi/30, size=3), -pi/30, pi/30)
-        self.vP = self.data.qvel[9:12] + clip(normal(loc=0, scale=0.02, size=3), -0.02, 0.02)
+        self.vQ = self.data.qvel[0:3] + clip(normal(loc=0, scale=0.02, size=3), -0.005, 0.005)
+        self.ωQ = self.data.qvel[3:6] + clip(normal(loc=0, scale=pi/30, size=3), -pi/60, pi/60)
+        self.vP = self.data.qvel[9:12] + clip(normal(loc=0, scale=0.02, size=3), -0.005, 0.005)
 
         return concatenate([self.xQ / self.pos_bound, self.RQ.flatten(), self.xP / self.pos_bound,
                             self.vQ / self.vel_bound, self.ωQ, self.vP / self.vel_bound])  # 24
    
-    def _get_qd(self):
-        l = 1.0
-        kx = 2 * np.diag([0.5, 0.5, 0.5])
-        kv = 2 * np.diag([0.75, 0.75, 0.75])
-        aPd = self.aPd[self.timestep] if self.timestep < self.max_timesteps else np.zeros(3)
-        dqd = self.dqd[self.timestep] if self.timestep < self.max_timesteps else self.dqd[-1]
-
-        # Compute qd that changes through time
-        Fff = (self.mQ + self.mP) * (aPd + np.array([0,0,self.g])) + self.mQ * l * np.dot(self.dq, self.dq) * self.q
-        Fpd = - kx @ self.exP - kv @ self.evP
-        A = Fff + Fpd
-        qd = - A / norm(A)
-
-        return qd, dqd
-
     def step(self, action, restore=False):
         # 1. Simulate for Single Time Step
         self.action = action
         if self.is_delayed: self.action_queue.append([self.data.time, self.action])
+        if self.is_full_traj: self._apply_downwash()
+        if self.is_disturbance: self._apply_disturbance()
         for _ in range(self.num_sims_per_env_step):
-            self.do_simulation(self.action, self.frame_skip)  # a_{t}
+            action_apply = self._action_delay() if self.is_delayed else self.action
+            self.do_simulation(action_apply, self.frame_skip)  # a_{t}
         if self.render_mode == "human": self.render()
         # 2. Get Observation
         obs_full = self._get_obs()
@@ -421,16 +398,21 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # 4. Termination / Truncation
         terminated = self._terminated()
         truncated = self._truncated()
+        self.info["terminated"] = terminated
         # 5. Update Data
         self._update_data(reward=reward, step=True)
 
         return obs_full, reward, terminated, truncated, {}
     
-    def do_simulation(self, ctrl, n_frames) -> None:
-        if self.is_delayed:
-            delay_time = uniform(self.delay_range[0], self.delay_range[1])
-            if self.data.time - self.action_queue[0][0] >= delay_time:
-                ctrl = self.action_queue.popleft()[1]
+    def _action_delay(self):
+        if self.data.time - self.action_queue[0][0] >= self.delay_time:
+            action_delayed = self.action_queue.popleft()[1]
+            self.delay_time = uniform(low=self.delay_range[0], high=self.delay_range[1])
+        else:
+            action_delayed = self.action_queue[0][1]
+        return action_delayed
+
+    def do_simulation(self, ctrl, n_frames):
         if self.control_scheme == "ctbr": ctrl = self._ctbr2srt(ctrl)  # CTBR
         else: ctrl = self.rotor_max_thrust * (ctrl + 1) / 2  # SRT
         self._step_mujoco_simulation(ctrl, n_frames)
@@ -442,23 +424,41 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
 
     def _rotor_dynamics(self, ctrl):
         desired_forces = ctrl
-        tau = np.zeros(4)
-        for i in range(4):
-            tau[i] = self.tau_up if desired_forces[i] > self.actual_forces[i] else self.tau_down
+        tau = np.array([self.tau_up if desired_forces[i] > self.actual_forces[i] else self.tau_down for i in range(4)])
         alpha = self.sim_dt / (tau + self.sim_dt)
         self.actual_forces = (1 - alpha) * self.actual_forces + alpha * desired_forces
 
     def _apply_control(self, ctrl):
-        self.data.actuator("Motor0").ctrl[0] = ctrl[0]  # data.ctrl[1] # front
-        self.data.actuator("Motor1").ctrl[0] = ctrl[1]  # data.ctrl[2] # back
-        self.data.actuator("Motor2").ctrl[0] = ctrl[2]  # data.ctrl[3] # left
-        self.data.actuator("Motor3").ctrl[0] = ctrl[3]  # data.ctrl[4] # right
+        self.data.actuator("Motor0").ctrl[0] = ctrl[0]
+        self.data.actuator("Motor1").ctrl[0] = ctrl[1]
+        self.data.actuator("Motor2").ctrl[0] = ctrl[2]
+        self.data.actuator("Motor3").ctrl[0] = ctrl[3]
+
+    def _apply_downwash(self):
+        if self.data.qpos[2] < 0.5:
+            theta = uniform(0, 2 * np.pi)
+            phi = uniform(0, np.pi / 2)
+            downwash = np.array([sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi)]) * (0.5 - self.data.qpos[2])
+            self.data.xfrc_applied[self.body_id][:3] = downwash
+
+    def _apply_disturbance(self):
+        if self.data.time - self.disturbance_start < self.disturbance_duration:
+            pass
+        elif self.data.time - self.disturbance_start < self.disturbance_duration + 1:
+            self.disturbance_wrench = np.zeros(6)
+        else:
+            self.disturbance_duration = uniform(low=self.disturbance_duration_range[0], high=self.disturbance_duration_range[1])
+            force = uniform(low=self.force_disturbance_range[0], high=self.force_disturbance_range[1], size=3)    # Force  [N]
+            torque = uniform(low=self.torque_disturbance_range[0], high=self.torque_disturbance_range[1], size=3) # Torque [Nm]
+            self.disturbance_wrench = concatenate([force, torque])
+            self.disturbance_start = self.data.time
+        self.data.xfrc_applied[self.body_id][0:6] = self.disturbance_wrench
 
     def _ctbr2srt(self, action):
-        zcmd = self.max_thrust * (action[0] + 1) / 2
-        dφd = action[1] / 2
-        dθd = action[2] / 2
-        dψd = action[3] / 2
+        zcmd = dual_tanh_payload(action[0])
+        dφd = tanh(action[1])
+        dθd = tanh(action[2])
+        dψd = tanh(action[3])
 
         self.edφP = dφd - self.ωQ[0]
         self.edφI = clip(self.edφI + self.edφP * self.sim_dt, -self.clipI, self.clipI)
@@ -496,8 +496,6 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         return f
 
     def _update_data(self, reward, step=True):
-        """ TEST """
-        # self._record()
         # Past
         self.s_buffer.append(self.s_curr)
         self.d_buffer.append(concatenate([self.xQd[self.timestep] / self.pos_bound, self.xPd[self.timestep] / self.pos_bound,
@@ -506,7 +504,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.action_last = self.action
         # Present
         self.time_in_sec = round(self.time_in_sec + self.policy_dt, 2)
-        self.timestep += self.num_sims_per_env_step
+        self.timestep += 1
         self.total_reward += reward
     
     def _record(self):
@@ -514,17 +512,17 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.test_record_Q.record(pos_curr=self.xQ, vel_curr=self.vQ, pos_d=self.xQd, vel_d=self.vQd)
 
     def _get_reward(self):
-        names = ['xP_rew', 'vP_rew', 'xQ_rew', 'vQ_rew', 'ψQ_rew', 'a_rew']
+        names = ['xP_rew', 'vP_rew', 'xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'Δa_rew']
         
         w_xP = 1.0
         w_vP = 0.5
         w_xQ = 0.8
         w_vQ = 0.4
         w_ψQ = 1.0
-        w_ωQ = 0.5
-        w_a  = 0.5
+        w_ωQ = 0.4
+        w_Δa = 0.1
 
-        reward_weights = np.array([w_xP, w_vP, w_xQ, w_vQ, w_ψQ, w_ωQ, w_a])
+        reward_weights = np.array([w_xP, w_vP, w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
         weights = reward_weights / sum(reward_weights)
 
         scale_xP = 1.0/0.5
@@ -533,106 +531,90 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         scale_vQ = 1.0/2.0
         scale_ψQ = 1.0/(pi/2)
         scale_ωQ = 1.0/0.25
-        scale_a  = 1.0/4.0
-
-        ψQd = 0
-        ψQ  = quat2euler_raw(self.data.qpos[3:7])[2]
+        scale_Δa = 1.0/0.5
         
-        exP = norm(self.exP, ord=2)
-        evP = norm(self.evP, ord=2)
-        exQ = norm(self.exQ, ord=2)
-        evQ = norm(self.evQ, ord=2)
-        eψQ = abs(ψQ - ψQd)
-        eωQ = norm(self.ωQ, ord=2)
-        if self.control_scheme == "ctbr":
-            ea = norm(np.array([0.2, 1, 1, 1]) * self.action, ord=2)
-        else:
-            ea = norm(self.action + 0.4114 * np.ones(4), ord=2)
+        exP = norm(self.data.qpos[7:10] - self.xPd[self.timestep], ord=2)
+        evP = norm(self.data.qvel[6:9] - self.vPd[self.timestep], ord=2)
+        exQ = norm(self.data.qpos[0:3] - self.xQd[self.timestep], ord=2)
+        evQ = norm(self.data.qvel[0:3] - self.vQd[self.timestep], ord=2)
+        eψQ = abs(quat2euler_raw(self.data.qpos[3:7])[2])
+        eωQ = norm(self.data.qvel[3:6], ord=2)
+        eΔa = norm(self.action - self.action_last, ord=2)
 
-        rewards = exp(-np.array([scale_xP, scale_vP, scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_a])
-                         *np.array([exP, evP, exQ, evQ, eψQ, eωQ, ea]))
+        rewards = exp(-np.array([scale_xP, scale_vP, scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa])
+                      *np.array([exP, evP, exQ, evQ, eψQ, eωQ, eΔa]))
         reward_dict = dict(zip(names, weights * rewards))
-        
-        if self.traj_type == "setpoint":
-            total_reward = sum(weights * rewards)
-        else:
-            total_reward = sum(weights * rewards) * (1 + 0.5 * self.difficulty)
+        total_reward = sum(weights * rewards)
 
         return total_reward, reward_dict
 
     def _terminated(self):
-        xP = self.data.qpos[11:14]
-        vP = self.data.qvel[9:12]
+        xP = self.data.qpos[7:10]
+        vP = self.data.qvel[6:9]
         attQ = quat2euler_raw(self.data.qpos[3:7])
 
         xPd = self.xPd[self.timestep] if self.timestep < self.max_timesteps else self.goal_pos
-        vPd = self.vPd[self.timestep] if self.timestep < self.max_timesteps else np.zeros(3)
+        vPd = self.vPd[self.timestep] if self.timestep < self.max_timesteps else zeros(3)
         exP = norm(xP - xPd)
         evP = norm(vP - vPd)
 
-        if exP > self.pos_err_bound:
+        if 5.0 <= self.time_in_sec <= 35.0 and xP[2] < 0.01:  # Crash except for takeoff and landing
             self.num_episode += 1
-            self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Pos error: {pos_err} | Time: {time} | Reward: {rew}".format(
+            self.history_episode[self.traj_type].append(self.timestep)
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Crashed | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
-                  traj_type=self.traj_type + " " + str(np.round(self.difficulty, 2)),
-                  pos_err=np.round(exP,1),
-                  time=np.round(self.time_in_sec,2),
-                  rew=np.round(self.total_reward,1)))
+                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
+                  pos_err=round(exP, 2),
+                  time=round(self.time_in_sec, 2),
+                  rew=round(self.total_reward, 1)))
             return True
-        elif evP > self.vel_err_bound:
+        if self.time_in_sec <= 35.0 and exP > self.pos_err_bound:
             self.num_episode += 1
-            self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Vel error: {vel_err} | Time: {time} | Reward: {rew}".format(
+            self.history_episode[self.traj_type].append(self.timestep)
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Pos error: {pos_err} | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
-                  traj_type=self.traj_type + " " + str(np.round(self.difficulty, 2)),
-                  vel_err=np.round(evP,1),
-                  time=np.round(self.time_in_sec,2),
-                  rew=np.round(self.total_reward,1)))
+                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
+                  pos_err=round(exP, 2),
+                  time=round(self.time_in_sec, 2),
+                  rew=round(self.total_reward, 1)))
+            return True
+        elif self.time_in_sec <= 35.0 and evP > self.vel_err_bound:
+            self.num_episode += 1
+            self.history_episode[self.traj_type].append(self.timestep)
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Vel error:  {vel_err} | Time: {time} | Reward: {rew}".format(
+                  env_num=self.env_num,
+                  epi=self.num_episode,
+                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
+                  vel_err=round(evP, 2),
+                  time=round(self.time_in_sec, 2),
+                  rew=round(self.total_reward, 1)))
             return True
         elif not(abs(attQ) < pi/2).all():
             self.num_episode += 1
-            self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Att error: {att} | Time: {time} | Reward: {rew}".format(
+            self.history_episode[self.traj_type].append(self.timestep)
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Att error: {att} | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
-                  traj_type=self.traj_type + " " + str(np.round(self.difficulty, 2)),
-                  att=np.round(attQ,1),
-                  time=np.round(self.time_in_sec,2),
-                  rew=np.round(self.total_reward,1)))
+                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
+                  att=round(attQ, 2),
+                  time=round(self.time_in_sec, 2),
+                  rew=round(self.total_reward, 1)))
             return True
         elif self.timestep >= self.max_timesteps:
             """ TEST """
-            # self.test_record_P.plot_error()
             # self.test_record_Q.plot_error()
-            # self.test_record_P.save_data()
-            # self.test_record_Q.save_data()
-            # self.test_record_P.reset()
             # self.test_record_Q.reset()
-            
-            # NOTE: Create a pandas DataFrame from the dictionary
-            # s_df = pd.DataFrame(self.s_record)
-            # s_df.to_csv('/Users/mintaekim/Desktop/HRL/Quadrotor/quadrotor_v1/train/data/s_record_{type}.csv'.format(type=self.traj_type + "_" + str(np.round(self.difficulty, 2))), index=False)
-            # print("Data saved to s_record_{type}.csv".format(type=self.traj_type + "_" + str(np.round(self.difficulty, 2))))
-            # a_df = pd.DataFrame(self.a_record)
-            # a_df.to_csv('/Users/mintaekim/Desktop/HRL/Quadrotor/quadrotor_v1/train/data/a_record_{type}.csv'.format(type=self.traj_type + "_" + str(np.round(self.difficulty, 2))), index=False)
-            # print("Data saved to a_record_{type}.csv".format(type=self.traj_type + "_" + str(np.round(self.difficulty, 2))))
-            
             self.num_episode += 1
-            self.history_epi[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | St {stage} | Traj: {traj_type} | Max time: {time} | Final pos error: {pos_err} | Reward: {rew}".format(
+            self.history_episode[self.traj_type].append(self.timestep)
+            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Max time: {time} | Final pos error: {pos_err} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  stage=self.stage,
-                  traj_type=self.traj_type + " " + str(np.round(self.difficulty, 2)),
-                  time=np.round(self.timestep*self.policy_dt,2),
-                  pos_err=np.round(exP,2),
-                  rew=np.round(self.total_reward,1)))
+                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
+                  time=round(self.time_in_sec, 2),
+                  pos_err=round(exP, 2),
+                  rew=round(self.total_reward, 1)))
             return True
         else:
             return False
@@ -654,19 +636,19 @@ class TestRecord:
         self.step = 0
         self.rec_obj = record_object
 
-        self.pos_x = np.zeros(self.max_steps)
-        self.pos_y = np.zeros(self.max_steps)
-        self.pos_z = np.zeros(self.max_steps)
-        self.pos_x_d = np.zeros(self.max_steps)
-        self.pos_y_d = np.zeros(self.max_steps)
-        self.pos_z_d = np.zeros(self.max_steps)
+        self.pos_x = zeros(self.max_steps)
+        self.pos_y = zeros(self.max_steps)
+        self.pos_z = zeros(self.max_steps)
+        self.pos_x_d = zeros(self.max_steps)
+        self.pos_y_d = zeros(self.max_steps)
+        self.pos_z_d = zeros(self.max_steps)
 
-        self.vel_x = np.zeros(self.max_steps)
-        self.vel_y = np.zeros(self.max_steps)
-        self.vel_z = np.zeros(self.max_steps)
-        self.vel_x_d = np.zeros(self.max_steps)
-        self.vel_y_d = np.zeros(self.max_steps)
-        self.vel_z_d = np.zeros(self.max_steps)
+        self.vel_x = zeros(self.max_steps)
+        self.vel_y = zeros(self.max_steps)
+        self.vel_z = zeros(self.max_steps)
+        self.vel_x_d = zeros(self.max_steps)
+        self.vel_y_d = zeros(self.max_steps)
+        self.vel_z_d = zeros(self.max_steps)
     
     def record(self, pos_curr, vel_curr, pos_d, vel_d):
         self.pos_x[self.step] = pos_curr[0]
@@ -689,19 +671,19 @@ class TestRecord:
         self.max_steps = self.max_timesteps // self.num_sims_per_env_step
         self.step = 0
 
-        self.pos_x = np.zeros(self.max_steps)
-        self.pos_y = np.zeros(self.max_steps)
-        self.pos_z = np.zeros(self.max_steps)
-        self.pos_x_d = np.zeros(self.max_steps)
-        self.pos_y_d = np.zeros(self.max_steps)
-        self.pos_z_d = np.zeros(self.max_steps)
+        self.pos_x = zeros(self.max_steps)
+        self.pos_y = zeros(self.max_steps)
+        self.pos_z = zeros(self.max_steps)
+        self.pos_x_d = zeros(self.max_steps)
+        self.pos_y_d = zeros(self.max_steps)
+        self.pos_z_d = zeros(self.max_steps)
 
-        self.vel_x = np.zeros(self.max_steps)
-        self.vel_y = np.zeros(self.max_steps)
-        self.vel_z = np.zeros(self.max_steps)
-        self.vel_x_d = np.zeros(self.max_steps)
-        self.vel_y_d = np.zeros(self.max_steps)
-        self.vel_z_d = np.zeros(self.max_steps)
+        self.vel_x = zeros(self.max_steps)
+        self.vel_y = zeros(self.max_steps)
+        self.vel_z = zeros(self.max_steps)
+        self.vel_x_d = zeros(self.max_steps)
+        self.vel_y_d = zeros(self.max_steps)
+        self.vel_z_d = zeros(self.max_steps)
 
     def plot_error(self):
         # Plotting
