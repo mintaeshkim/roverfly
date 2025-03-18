@@ -1,4 +1,8 @@
+import numpy as np
+import mujoco as mj
 import glfw
+
+
 # Define your custom setup function for the viewer
 def setup_viewer(viewer):
     # Set real-time rendering
@@ -10,6 +14,4 @@ def setup_viewer(viewer):
     # Set the window size
     if hasattr(viewer, "window"):
         window = viewer.window
-        glfw.set_window_size(window, 800, 600)
-    
-    # Hide the bar
+        glfw.set_window_size(window, 800, 800)

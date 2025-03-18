@@ -21,6 +21,7 @@ import envs.utils.utility_trajectory as ut
 from envs.utils.env_randomizer import EnvRandomizer
 from envs.utils.utility_functions import *
 from envs.utils.rotation_transformations import *
+from envs.utils.render_util import *
 import time
 import matplotlib.pyplot as plt
 
@@ -42,7 +43,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     ):
         self.model = mj.MjModel.from_xml_path(xml_file)
         self.data = mj.MjData(self.model)
-        self.body_id = self.model.body(name="quadrotor").id
+        self.quadrotor_body_id = self.model.body(name="quadrotor").id
+        self.payload_body_id = self.model.body(name="payload").id
         self.env_randomizer = EnvRandomizer(model=self.model)
         self.frame_skip = frame_skip
         self.control_scheme = "ctbr"  # "srt"
@@ -73,8 +75,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # region
         self.is_io_history     = True
         self.is_delayed        = True
-        self.is_env_randomized = True
-        self.is_disturbance    = True
+        self.is_env_randomized = False
+        self.is_disturbance    = False
         self.is_full_traj      = False
         # endregion
         ##################################################
@@ -96,8 +98,6 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.force_offset      = 2.3 * np.ones(4)  # Warm start
         self.action_last       = self.action_offset
         self.num_episode       = 0
-        self.history_episode   = {'setpoint': deque([0]*10, maxlen=10), 'curve': deque([0]*10, maxlen=10)}
-        self.progress          = {'setpoint': 1e-3, 'curve': 1e-3}
         self.action_space      = self._set_action_space()
         self.observation_space = self._set_observation_space()
         # endregion
@@ -107,8 +107,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # region
         self.pos_bound = 3.0
         self.vel_bound = 5.0
-        self.pos_err_bound = 0.5
-        self.vel_err_bound = 2.0
+        self.pos_err_bound = 1.0
+        self.vel_err_bound = 4.0
         # endregion
         ##################################################
         ################### MUJOCOENV ####################
@@ -120,7 +120,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.action_space = self._set_action_space()
         self.metadata = {
             "render_modes": ["human", "rgb_array", "depth_array"],
-            "render_fps": int(np.round(1.0 / self.sim_dt))
+            "render_fps": int(self.policy_freq)
         }
         self.observation_structure = {
             "qpos": self.data.qpos.size,
@@ -245,34 +245,21 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
 
     def _reset_model(self):
         if not self.is_full_traj: self.max_timesteps = self.traj_timesteps
-        self.traj_type = choice(['setpoint', 'curve'], p=[0.5, 0.5])
 
-        """ Compute progress """
-        self.progress['setpoint'] = (mean(self.history_episode['setpoint']) / self.max_timesteps)
-        self.progress['curve'] = (mean(self.history_episode['curve']) / self.max_timesteps)
+        self.traj = ut.CrazyTrajectoryPayload(
+            tf=self.max_timesteps*self.policy_dt,
+            ax=choice([-1,1])*2,
+            ay=choice([-1,1])*2,
+            az=choice([-1,1])*1,
+            f1=choice([-1,1])*0.2,
+            f2=choice([-1,1])*0.2,
+            f3=choice([-1,1])*0.1
+        )
         
-        """ TEST """
-        # self.progress['setpoint'] = 1.0
-        # self.progress['curve'] = 0.6
-        # self.traj_type = 'curve'
-        # self.action_record = np.empty((self.max_timesteps, self.a_dim))
-
-        """ Set trajectory parameters """
-        if self.traj_type == 'setpoint':
-            self.traj = ut.CrazyTrajectoryPayload(tf=self.max_timesteps*self.policy_dt, ax=0, ay=0, az=0, f1=0, f2=0, f3=0)
-        if self.traj_type == 'curve':
-            self.traj = ut.CrazyTrajectoryPayload(tf=self.max_timesteps*self.policy_dt,
-                                                  ax=choice([-1,1])*3*self.progress["curve"],
-                                                  ay=choice([-1,1])*3*self.progress["curve"],
-                                                  az=choice([-1,1])*1.5*self.progress["curve"],
-                                                  f1=choice([-1,1])*0.5*self.progress["curve"],
-                                                  f2=choice([-1,1])*0.5*self.progress["curve"],
-                                                  f3=choice([-1,1])*0.25*self.progress["curve"])
-            
-        if self.is_full_traj: self.traj = ut.FullCrazyTrajectory(tf=45, traj=self.traj)
+        if self.is_full_traj: self.traj = ut.FullCrazyTrajectoryPayload(tf=45, traj=self.traj)
 
         # self.traj.plot()
-        # self.traj.plot3d()
+        # self.traj.plot3d_payload()
 
         """ Generate trajectory """
         self._generate_trajectory()
@@ -307,23 +294,23 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.dqd[0], self.d2qd[0] = zeros(3), zeros(3)
 
     def _set_initial_state(self):
-        wx = 0.1 * uniform(0, self.progress[self.traj_type])
-        watt = (pi/12) * uniform(0, self.progress[self.traj_type])
-        wv = 0.2 * uniform(0, self.progress[self.traj_type])
-        wω = (pi/6) * uniform(0, self.progress[self.traj_type])
+        wx = 0.1 * uniform(size=3, low=-1, high=1)
+        watt = (pi/12) * uniform(size=3, low=-1, high=1)
+        wv = 0.1 * uniform(size=3, low=-1, high=1)
+        wω = (pi/12) * uniform(size=3, low=-1, high=1)
 
-        dPQ = 1.0 - 0.01 * uniform(0, self.progress[self.traj_type])
+        dPQ = 1.0 - 0.01 * uniform(0, 1)
         psi = uniform(0, 2*pi)
-        phi = (pi/3) * clip(normal(0, self.progress[self.traj_type]), -0.5, 0.5)
+        phi = (pi/6) * uniform(0, 1)  # pi/4
         
         xP = self.xPd[0] + wx
-        xQ = xP + dPQ * np.array([cos(psi)*sin(phi), sin(psi)*sin(phi), cos(phi)]) + wx
-        attP = euler2quat_raw(quat2euler_raw(self.init_qpos[10:14]) + uniform(size=3, low=-watt, high=watt))
-        attQ = euler2quat_raw(quat2euler_raw(self.init_qpos[3:7]) + uniform(size=3, low=-watt, high=watt))
-        vP = self.vPd[0] + uniform(size=3, low=-wv, high=wv)
-        vQ = self.vPd[0] + uniform(size=3, low=-wv, high=wv)
-        ωP = self.init_qvel[9:12] + uniform(size=3, low=-wω, high=wω)
-        ωQ = self.init_qvel[3:6] + uniform(size=3, low=-wω, high=wω)
+        xQ = xP + dPQ * np.array([cos(psi)*sin(phi), sin(psi)*sin(phi), cos(phi)])
+        attP = self.init_qpos[10:14]
+        attQ = euler2quat_raw(quat2euler_raw(self.init_qpos[3:7]) + watt)
+        vP = self.vPd[0] + wv
+        vQ = vP
+        ωP = self.init_qvel[9:12]
+        ωQ = self.init_qvel[3:6] + wω
         
         qpos = concatenate([xQ, attQ, xP, attP])
         qvel = concatenate([vQ, ωQ, vP, ωP])
@@ -375,7 +362,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
 
         self.vQ = self.data.qvel[0:3] + clip(normal(loc=0, scale=0.02, size=3), -0.005, 0.005)
         self.ωQ = self.data.qvel[3:6] + clip(normal(loc=0, scale=pi/30, size=3), -pi/60, pi/60)
-        self.vP = self.data.qvel[9:12] + clip(normal(loc=0, scale=0.02, size=3), -0.005, 0.005)
+        self.vP = self.data.qvel[6:9] + clip(normal(loc=0, scale=0.02, size=3), -0.005, 0.005)
 
         return concatenate([self.xQ / self.pos_bound, self.RQ.flatten(), self.xP / self.pos_bound,
                             self.vQ / self.vel_bound, self.ωQ, self.vP / self.vel_bound])  # 24
@@ -391,7 +378,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             self.do_simulation(action_apply, self.frame_skip)  # a_{t}
         if self.render_mode == "human": self.render()
         # 2. Get Observation
-        obs_full = self._get_obs()
+        obs = self._get_obs()
         # 3. Get Reward
         reward, reward_dict = self._get_reward()
         self.info["reward_dict"] = reward_dict
@@ -402,7 +389,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # 5. Update Data
         self._update_data(reward=reward, step=True)
 
-        return obs_full, reward, terminated, truncated, {}
+        return obs, reward, terminated, truncated, self.info
     
     def _action_delay(self):
         if self.data.time - self.action_queue[0][0] >= self.delay_time:
@@ -439,7 +426,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             theta = uniform(0, 2 * np.pi)
             phi = uniform(0, np.pi / 2)
             downwash = np.array([sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi)]) * (0.5 - self.data.qpos[2])
-            self.data.xfrc_applied[self.body_id][:3] = downwash
+            self.data.xfrc_applied[self.quadrotor_body_id][:3] = downwash
 
     def _apply_disturbance(self):
         if self.data.time - self.disturbance_start < self.disturbance_duration:
@@ -452,7 +439,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             torque = uniform(low=self.torque_disturbance_range[0], high=self.torque_disturbance_range[1], size=3) # Torque [Nm]
             self.disturbance_wrench = concatenate([force, torque])
             self.disturbance_start = self.data.time
-        self.data.xfrc_applied[self.body_id][0:6] = self.disturbance_wrench
+        self.data.xfrc_applied[self.quadrotor_body_id][0:6] = self.disturbance_wrench
 
     def _ctbr2srt(self, action):
         zcmd = dual_tanh_payload(action[0])
@@ -525,11 +512,11 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         reward_weights = np.array([w_xP, w_vP, w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
         weights = reward_weights / sum(reward_weights)
 
-        scale_xP = 1.0/0.5
-        scale_vP = 1.0/2.0
-        scale_xQ = 1.0/0.5
-        scale_vQ = 1.0/2.0
-        scale_ψQ = 1.0/(pi/2)
+        scale_xP = 1.0/0.25
+        scale_vP = 1.0/1.0
+        scale_xQ = 1.0/0.25
+        scale_vQ = 1.0/1.0
+        scale_ψQ = 1.0/(pi/4)
         scale_ωQ = 1.0/0.25
         scale_Δa = 1.0/0.5
         
@@ -549,6 +536,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         return total_reward, reward_dict
 
     def _terminated(self):
+        xQ = self.data.qpos[0:3]
         xP = self.data.qpos[7:10]
         vP = self.data.qvel[6:9]
         attQ = quat2euler_raw(self.data.qpos[3:7])
@@ -558,46 +546,37 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         exP = norm(xP - xPd)
         evP = norm(vP - vPd)
 
-        if 5.0 <= self.time_in_sec <= 35.0 and xP[2] < 0.01:  # Crash except for takeoff and landing
+        if 5.0 <= self.time_in_sec <= 40.0 and xQ[2] < 0.01:  # Crash except for takeoff and landing
             self.num_episode += 1
-            self.history_episode[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Crashed | Time: {time} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Crashed | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
+                  time=round(self.time_in_sec, 2),
+                  rew=round(self.total_reward, 1)))
+            return True
+        if 5.0 <= self.time_in_sec <= 40.0 and exP > self.pos_err_bound:
+            self.num_episode += 1
+            print("Env {env_num} | Ep {epi} | Pos error: {pos_err} | Time: {time} | Reward: {rew}".format(
+                  env_num=self.env_num,
+                  epi=self.num_episode,
                   pos_err=round(exP, 2),
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
             return True
-        if self.time_in_sec <= 35.0 and exP > self.pos_err_bound:
+        elif evP > self.vel_err_bound:
             self.num_episode += 1
-            self.history_episode[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Pos error: {pos_err} | Time: {time} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Vel error: {vel_err} | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
-                  pos_err=round(exP, 2),
-                  time=round(self.time_in_sec, 2),
-                  rew=round(self.total_reward, 1)))
-            return True
-        elif self.time_in_sec <= 35.0 and evP > self.vel_err_bound:
-            self.num_episode += 1
-            self.history_episode[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Vel error:  {vel_err} | Time: {time} | Reward: {rew}".format(
-                  env_num=self.env_num,
-                  epi=self.num_episode,
-                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   vel_err=round(evP, 2),
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
             return True
         elif not(abs(attQ) < pi/2).all():
             self.num_episode += 1
-            self.history_episode[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Att error: {att} | Time: {time} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Att error: {att} | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   att=round(attQ, 2),
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
@@ -607,11 +586,9 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             # self.test_record_Q.plot_error()
             # self.test_record_Q.reset()
             self.num_episode += 1
-            self.history_episode[self.traj_type].append(self.timestep)
-            print("Env {env_num} | Ep {epi} | Traj: {traj_type} | Max time: {time} | Final pos error: {pos_err} | Reward: {rew}".format(
+            print("Env {env_num} | Ep {epi} | Max time: {time} | Final pos error: {pos_err} | Reward: {rew}".format(
                   env_num=self.env_num,
                   epi=self.num_episode,
-                  traj_type=self.traj_type + " " + str(round(self.progress[self.traj_type], 2)),
                   time=round(self.time_in_sec, 2),
                   pos_err=round(exP, 2),
                   rew=round(self.total_reward, 1)))
@@ -621,6 +598,44 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
 
     def _truncated(self):
         return False
+
+    def render(self):
+        if self.mujoco_renderer.viewer is not None:
+            if self.timestep == 0 or self.timestep == 1: setup_viewer(self.mujoco_renderer.viewer)
+        #     self.mujoco_renderer.viewer.scn.ngeom = 0
+        #     self.render_trajectory(self.mujoco_renderer.viewer.scn, self.xPd)
+        return self.mujoco_renderer.render(self.render_mode)
+
+    def add_visual_capsule(self, scene, point1, point2, radius, rgba):
+        """Adds a visual capsule (line segment) between two points in the Mujoco scene."""
+        if scene.ngeom >= scene.maxgeom:
+            return
+        scene.ngeom += 1  # Increase number of geometries
+
+        # Initialize capsule geom
+        mj.mjv_initGeom(scene.geoms[scene.ngeom - 1],
+                        mj.mjtGeom.mjGEOM_CAPSULE, np.zeros(3),
+                        np.zeros(3), np.zeros(9), rgba.astype(np.float32))
+
+        # Connect two points with a capsule (thin line)
+        mj.mjv_connector(scene.geoms[scene.ngeom - 1],
+                        mj.mjtGeom.mjGEOM_CAPSULE, radius,
+                        point1, point2)
+
+    def render_trajectory(self, scene, xPd):
+        """Renders the entire trajectory xPd as a line using visual capsules."""
+        num_traj_points = xPd.shape[0]
+        
+        for i in range(num_traj_points - 1):
+            rgba = np.array([1, 0, 0, 1])  # Red color for the trajectory
+            radius = 0.01  # Thin line radius
+            self.add_visual_capsule(scene, xPd[i], xPd[i + 1], radius, rgba)
+        print("Trajectory added")
+
+    def scene_callback(self, physics, scn):
+        """Callback function to render the desired trajectory."""
+        print("callback")
+        self.render_trajectory(scn, physics.env.xPd)  # Use xPd from the environment
 
     def close(self):
         if self.mujoco_renderer is not None:
@@ -752,8 +767,3 @@ class TestRecord:
 
 if __name__ == "__main__":
     env = QuadrotorPayloadEnv()
-
-
-# TODO
-# 1. Randomize env
-# 2. Check and get rid of get qd

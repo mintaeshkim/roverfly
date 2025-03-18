@@ -216,49 +216,67 @@ class CircularTraj(Trajectory):
 
 
 class CrazyTrajectory(Trajectory):
-    def __init__(self, tf=30, ax=3, ay=3, az=3, f1=0.5, f2=0.5, f3=0.25):
+    def __init__(self, tf=30, ax=2, ay=2, az=1, f1=0.2, f2=0.2, f3=0.1):
         super().__init__(tf)
-        alpha, beta = 5.0, 5.0
-        self.ax, self.ay, self.az = [a * np.random.beta(alpha, beta) for a in (ax, ay, az)]
-        self.f1, self.f2, self.f3 = [f * np.random.beta(alpha, beta) for f in (f1, f2, f3)]
-        self.phix, self.phiy, self.phiz = np.random.choice([0, np.pi], size=3)
+
+        self.ax = np.random.uniform(ax/2, ax)
+        self.ay = np.random.uniform(ay/2, ay)
+        self.az = np.random.uniform(az/2, az)
+        
+        self.f1 = np.random.uniform(f1/2, f1)
+        self.f2 = np.random.uniform(f2/2, f2)
+        self.f3 = np.random.uniform(f3/2, f3)
+
+        self.phix = np.random.choice([np.pi/2, 3*np.pi/2])
+        self.phiy = np.random.choice([np.pi/2, 3*np.pi/2])
+        self.phiz = np.random.choice([np.pi/2, 3*np.pi/2])
 
     def window(self, t):
-        """Cosine window function for smooth velocity transitions at t=5s and t=25s"""
-        if t < 5 or t > 25:
+        """Window function for smooth velocity transitions at t=3s and t=tf-3s"""
+        t_start, t_end = 5, self._tf - 5
+        transition_duration = 3.0  # Extended transition for smoothness
+        if t < t_start or t > t_end:
             return 0  # Hovering state (no movement)
-        elif 5 <= t < 7.5:
-            return 0.5 * (1 - np.cos(np.pi * (t - 5) / 2.5))  # Smooth transition start
-        elif 22.5 < t <= 25:
-            return 0.5 * (1 - np.cos(np.pi * (25 - t) / 2.5))  # Smooth transition end
+        elif t_start <= t < t_start + transition_duration:
+            x = (t - t_start) / transition_duration
+            return 3 * x**2 - 2 * x**3  # Smoothstep function
+        elif t_end - transition_duration < t <= t_end:
+            x = (t_end - t) / transition_duration
+            return 3 * x**2 - 2 * x**3  # Smoothstep function (reverse)
         return 1  # Full trajectory motion
 
     def d_window(self, t):
         """Derivative of the window function for velocity adjustment"""
-        if 5 <= t < 7.5:
-            return 0.5 * (np.pi / 2.5) * np.sin(np.pi * (t - 5) / 2.5)
-        elif 22.5 < t <= 25:
-            return -0.5 * (np.pi / 2.5) * np.sin(np.pi * (25 - t) / 2.5)
-        return 0  # No change in hovering state
+        t_start, t_end = 5, self._tf - 5
+        transition_duration = 3.0
+        if t_start <= t < t_start + transition_duration:
+            x = (t - t_start) / transition_duration
+            return (6 * x - 6 * x**2) / transition_duration
+        elif t_end - transition_duration < t <= t_end:
+            x = (t_end - t) / transition_duration
+            return (-6 * x + 6 * x**2) / transition_duration
+        return 0  # No velocity change in hovering
 
     def compute(self, t):
         """Compute position, velocity, and acceleration at time t"""
-        w = [2 * np.pi * f for f in (self.f1, self.f2, self.f3)]  # Convert frequencies to angular velocities
-        phases = [self.phix, self.phiy, self.phiz]
+        w1, w2, w3 = [2 * np.pi * f for f in (self.f1, self.f2, self.f3)]
         win = self.window(t)
         d_win = self.d_window(t)
 
-        # Compute position
-        x = np.array([win * a * np.sin(wi * t + phi) for a, wi, phi in zip((self.ax, self.ay, self.az), w, phases)])
-        # Compute velocity with window function scaling
-        v = np.array([
-            win * a * np.cos(wi * t + phi) * wi + d_win * a * np.sin(wi * t + phi)
-            for a, wi, phi in zip((self.ax, self.ay, self.az), w, phases)
+        x = np.array([
+            win * self.ax * (1 - np.cos(w1 * t + self.phix)),
+            win * self.ay * (1 - np.cos(w2 * t + self.phiy)),
+            win * self.az * (1 - np.cos(w3 * t + self.phiz))
         ])
-        # Compute acceleration with second derivative adjustments
+        v = np.array([
+            win * self.ax * np.sin(w1 * t + self.phix) * w1 + d_win * self.ax * (1 - np.cos(w1 * t + self.phix)),
+            win * self.ay * np.sin(w2 * t + self.phiy) * w2 + d_win * self.ay * (1 - np.cos(w2 * t + self.phiy)),
+            win * self.az * np.sin(w3 * t + self.phiz) * w3 + d_win * self.az * (1 - np.cos(w3 * t + self.phiz))
+        ])
         a = np.array([
-            win * (-a * np.sin(wi * t + phi) * wi**2) + 2 * d_win * a * np.cos(wi * t + phi) * wi
-            for a, wi, phi in zip((self.ax, self.ay, self.az), w, phases)
+            win * self.ax * np.cos(w1 * t + self.phix) * w1 * w1 + 2 * d_win * self.ax * np.sin(w1 * t + self.phix) * w1,
+            win * self.ay * np.cos(w2 * t + self.phiy) * w2 * w2 + 2 * d_win * self.ay * np.sin(w2 * t + self.phiy) * w2,
+            win * self.az * np.cos(w3 * t + self.phiz) * w3 * w3 + 2 * d_win * self.az * np.sin(w3 * t + self.phiz) * w3
         ])
         
         return x, v, a
@@ -267,22 +285,22 @@ class CrazyTrajectory(Trajectory):
         """Return the desired state at time t, maintaining hovering outside the trajectory range"""
         if t < 5:
             return self.compute(0)[0], np.zeros(3), np.zeros(3)  # Maintain hovering at the initial position
-        elif t > 25:
-            return self.compute(25)[0], np.zeros(3), np.zeros(3)  # Maintain hovering at the final position
+        elif t > self._tf - 5:
+            return self.compute(self._tf - 5)[0], np.zeros(3), np.zeros(3)  # Maintain hovering at the final position
         return self.compute(t)
 
 
 class CrazyTrajectoryPayload(Trajectory):
-    def __init__(self, tf=30, ax=3, ay=3, az=3, f1=0.5, f2=0.5, f3=0.25):
+    def __init__(self, tf=30, ax=2, ay=2, az=1, f1=0.2, f2=0.2, f3=0.1):
         super().__init__(tf)
-        alpha_param, beta_param = 5.0, 5.0
-        self.ax = ax * np.random.beta(alpha_param, beta_param)
-        self.ay = ay * np.random.beta(alpha_param, beta_param)
-        self.az = az * np.random.beta(alpha_param, beta_param)
+
+        self.ax = np.random.uniform(ax/2, ax)
+        self.ay = np.random.uniform(ay/2, ay)
+        self.az = np.random.uniform(az/2, az)
         
-        self.f1 = f1 * np.random.beta(alpha_param, beta_param)
-        self.f2 = f2 * np.random.beta(alpha_param, beta_param)
-        self.f3 = f3 * np.random.beta(alpha_param, beta_param)
+        self.f1 = np.random.uniform(f1/2, f1)
+        self.f2 = np.random.uniform(f2/2, f2)
+        self.f3 = np.random.uniform(f3/2, f3)
 
         self.phix = np.random.choice([np.pi/2, 3*np.pi/2])
         self.phiy = np.random.choice([np.pi/2, 3*np.pi/2])
@@ -293,22 +311,30 @@ class CrazyTrajectoryPayload(Trajectory):
         self.e3 = np.array([0,0,1])
 
     def window(self, t):
-        """Cosine window function for smooth velocity transitions at t=2s and t=tf-2s"""
-        if t < 2 or t > self._tf - 2:
+        """Window function for smooth velocity transitions at t=3s and t=tf-3s"""
+        t_start, t_end = 5, self._tf - 5
+        transition_duration = 3.0  # Extended transition for smoothness
+        if t < t_start or t > t_end:
             return 0  # Hovering state (no movement)
-        elif 2 <= t < 4:
-            return 0.5 * (1 - np.cos(np.pi * (t - 2) / 2))  # Smooth transition start
-        elif self._tf - 4 < t <= self._tf - 2:
-            return 0.5 * (1 - np.cos(np.pi * (self._tf - 2 - t) / 2))  # Smooth transition end
+        elif t_start <= t < t_start + transition_duration:
+            x = (t - t_start) / transition_duration
+            return 3 * x**2 - 2 * x**3  # Smoothstep function
+        elif t_end - transition_duration < t <= t_end:
+            x = (t_end - t) / transition_duration
+            return 3 * x**2 - 2 * x**3  # Smoothstep function (reverse)
         return 1  # Full trajectory motion
 
     def d_window(self, t):
         """Derivative of the window function for velocity adjustment"""
-        if 2 <= t < 4:
-            return 0.5 * (np.pi / 2) * np.sin(np.pi * (t - 2) / 2)
-        elif self._tf - 4 < t <= self._tf - 2:
-            return -0.5 * (np.pi / 2) * np.sin(np.pi * (self._tf - 2 - t) / 2)
-        return 0  # No change in hovering state
+        t_start, t_end = 5, self._tf - 5
+        transition_duration = 3.0
+        if t_start <= t < t_start + transition_duration:
+            x = (t - t_start) / transition_duration
+            return (6 * x - 6 * x**2) / transition_duration
+        elif t_end - transition_duration < t <= t_end:
+            x = (t_end - t) / transition_duration
+            return (-6 * x + 6 * x**2) / transition_duration
+        return 0  # No velocity change in hovering
 
     def compute(self, t):
         """Compute trajectory with smooth transition"""
@@ -358,10 +384,10 @@ class CrazyTrajectoryPayload(Trajectory):
 
     def get(self, t):
         """Return desired state at time t, maintaining hovering outside trajectory range"""
-        if t < 2:
+        if t < 5:
             return self.compute(0)[0], np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)
-        elif t > self._tf - 2:
-            return self.compute(self._tf - 2)[0], np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)
+        elif t > self._tf - 5:
+            return self.compute(self._tf - 5)[0], np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)
         return self.compute(t)
 
 
@@ -795,8 +821,6 @@ class QuinticTrajectory(Trajectory):
         return self.compute(t)
 
 
-""" TEST """
-# region
 class FullCrazyTrajectory(Trajectory):
     def __init__(self, traj, tf=45):
         """
@@ -815,47 +839,66 @@ class FullCrazyTrajectory(Trajectory):
 
         # Define takeoff and landing trajectories using QuinticTrajectory
         self.takeoff_traj = QuinticTrajectory(tf=5, x0=np.array([0, 0, 0]), xf=np.array([0, 0, self.takeoff_height]))
-        self.landing_traj = QuinticTrajectory(tf=10, x0=np.array([0, 0, self.takeoff_height]), xf=np.array([0, 0, 0]))
+        self.landing_traj = QuinticTrajectory(tf=5, x0=np.array([0, 0, self.takeoff_height]), xf=np.array([0, 0, 0]))
 
     def get(self, t):
         if t < 5:
             return self.takeoff_traj.get(t)  # Takeoff phase
-        elif t < 35:
+        elif t < self._tf - 5:
             crazy_x, crazy_v, crazy_a = self.crazy_traj.get(t - 5)
             crazy_x[2] += self.takeoff_height  # Shift trajectory to hover at 1.5m height
             return crazy_x, crazy_v, crazy_a
         else:
-            return self.landing_traj.get(t - 35)  # Landing phase
-# endregion
+            return self.landing_traj.get(t - (self._tf - 5))  # Landing phase
 
 
-""" TRAIN """
-# region
-# class FullCrazyTrajectory(Trajectory):
-#     def __init__(self,
-#                  traj=CrazyTrajectory(tf=30, ax=0, ay=0, az=0, f1=0, f2=0, f3=0),
-#                  tf=45):
-#         super().__init__(tf)
-#         self.takeoff_traj = SmoothTraj5(x0=np.array([0, 0, 0]), xf=np.array([0, 0, 1.5]), tf=5)
-#         self.crazy_traj = traj
-#         self.landing_traj = None
-#         self.takeoff_time = 5
-#         self.landing_time = 35
 
-#     def get(self, t):
-#         if t < self.takeoff_time:  # Takeoff Phase
-#             return self.takeoff_traj.get(t)
-#         elif t < self.landing_time:  # Crazy Trajectory Phase
-#             x, v, a = self.crazy_traj.get(t - self.takeoff_time)
-#             x += np.array([0, 0, 1.5])
-#             return x, v, a
-#         else:  # Landing Phase
-#             if self.landing_traj is None:
-#                 final_pos, _, _ = self.crazy_traj.get(self.landing_time - self.takeoff_time)
-#                 final_pos += np.array([0, 0, 1.5])
-#                 self.landing_traj = SmoothTraj5(x0=final_pos, xf=[final_pos[0], final_pos[1], 0], tf=self._tf-self.landing_time)
-#             return self.landing_traj.get(t - self.landing_time)
-# endregion
+class FullCrazyTrajectoryPayload(Trajectory):
+    def __init__(self, traj, tf=45):
+        """
+        Full trajectory that includes:
+        1. Smooth takeoff (0-5s) using a QuinticTrajectory.
+        2. Crazy trajectory with payload (5-40s).
+        3. Smooth landing (40-45s) using a QuinticTrajectory.
+
+        Args:
+            traj (Trajectory): An instance of CrazyTrajectoryPayload.
+            tf (float): Total duration of the trajectory (default: 45s).
+        """
+        super().__init__(tf)
+        self.crazy_traj = traj
+        self.takeoff_height = 4.0  # Target height for takeoff and landing
+
+        # Define takeoff and landing trajectories using QuinticTrajectory
+        self.takeoff_traj = QuinticTrajectory(
+            tf=5, x0=[0, 0, 0], xf=[0, 0, self.takeoff_height]
+        )
+        self.landing_traj = QuinticTrajectory(
+            tf=5, x0=[0, 0, self.takeoff_height], xf=[0, 0, 0]
+        )
+
+    def get(self, t):
+        """Returns position, velocity, acceleration, jerk, payload orientation, and its derivatives."""
+        if t < 5:
+            position, velocity, acceleration = self.takeoff_traj.get(t)
+            jerk = np.zeros(3)
+            q = np.array([0, 0, -1])  # Assume vertical alignment during takeoff
+            dq = np.zeros(3)
+            d2q = np.zeros(3)
+            return position, velocity, acceleration, jerk, q, dq, d2q
+        elif t < self._tf - 5:
+            crazy_x, crazy_v, crazy_a, crazy_da, crazy_q, crazy_dq, crazy_d2q = self.crazy_traj.get(t - 5)
+            crazy_x[2] += self.takeoff_height  # Shift trajectory to hover at 1.5m height
+            return crazy_x, crazy_v, crazy_a, crazy_da, crazy_q, crazy_dq, crazy_d2q
+        else:
+            position, velocity, acceleration = self.landing_traj.get(t - (self._tf - 5))
+            jerk = np.zeros(3)
+            q = np.array([0, 0, -1])  # Assume vertical alignment during landing
+            dq = np.zeros(3)
+            d2q = np.zeros(3)
+            return position, velocity, acceleration, jerk, q, dq, d2q
+
+        
 
 if __name__ == "__main__":
     # traj = FullCrazyTrajectory(tf=45, traj=CrazyTrajectory(tf=30, ax=1, ay=1, az=1, f1=0.5, f2=0.5, f3=0.5))
@@ -865,7 +908,9 @@ if __name__ == "__main__":
 
     # crazy_traj = CrazyTrajectory()
     # crazy_traj.plot()
+    # crazy_traj.plot3d()
 
-    crazy_payload_traj = CrazyTrajectoryPayload()
-    crazy_payload_traj.plot()
-    crazy_payload_traj.plot3d_payload()
+    for _ in range(10):
+        crazy_payload_traj = CrazyTrajectoryPayload()
+        crazy_payload_traj.plot()
+        crazy_payload_traj.plot3d_payload()
