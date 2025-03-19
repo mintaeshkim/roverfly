@@ -231,6 +231,15 @@ class CrazyTrajectory(Trajectory):
         self.phiy = np.random.choice([np.pi/2, 3*np.pi/2])
         self.phiz = np.random.choice([np.pi/2, 3*np.pi/2])
 
+        self.v_max = 4.0
+        self.w1, self.w2, self.w3 = [2 * np.pi * f for f in (self.f1, self.f2, self.f3)]
+
+        if max(self.ax * self.w1, self.ay * self.w2, self.az * self.w3) > self.v_max:
+            scaling_factor = max(self.ax * self.w1, self.ay * self.w2, self.az * self.w3) / self.v_max
+            self.ax *= scaling_factor
+            self.ay *= scaling_factor
+            self.az *= scaling_factor
+
     def window(self, t):
         """Window function for smooth velocity transitions at t=3s and t=tf-3s"""
         t_start, t_end = 5, self._tf - 5
@@ -259,24 +268,23 @@ class CrazyTrajectory(Trajectory):
 
     def compute(self, t):
         """Compute position, velocity, and acceleration at time t"""
-        w1, w2, w3 = [2 * np.pi * f for f in (self.f1, self.f2, self.f3)]
         win = self.window(t)
         d_win = self.d_window(t)
 
         x = np.array([
-            win * self.ax * (1 - np.cos(w1 * t + self.phix)),
-            win * self.ay * (1 - np.cos(w2 * t + self.phiy)),
-            win * self.az * (1 - np.cos(w3 * t + self.phiz))
+            win * self.ax * (1 - np.cos(self.w1 * t + self.phix)),
+            win * self.ay * (1 - np.cos(self.w2 * t + self.phiy)),
+            win * self.az * (1 - np.cos(self.w3 * t + self.phiz))
         ])
         v = np.array([
-            win * self.ax * np.sin(w1 * t + self.phix) * w1 + d_win * self.ax * (1 - np.cos(w1 * t + self.phix)),
-            win * self.ay * np.sin(w2 * t + self.phiy) * w2 + d_win * self.ay * (1 - np.cos(w2 * t + self.phiy)),
-            win * self.az * np.sin(w3 * t + self.phiz) * w3 + d_win * self.az * (1 - np.cos(w3 * t + self.phiz))
+            win * self.ax * np.sin(self.w1 * t + self.phix) * self.w1 + d_win * self.ax * (1 - np.cos(self.w1 * t + self.phix)),
+            win * self.ay * np.sin(self.w2 * t + self.phiy) * self.w2 + d_win * self.ay * (1 - np.cos(self.w2 * t + self.phiy)),
+            win * self.az * np.sin(self.w3 * t + self.phiz) * self.w3 + d_win * self.az * (1 - np.cos(self.w3 * t + self.phiz))
         ])
         a = np.array([
-            win * self.ax * np.cos(w1 * t + self.phix) * w1 * w1 + 2 * d_win * self.ax * np.sin(w1 * t + self.phix) * w1,
-            win * self.ay * np.cos(w2 * t + self.phiy) * w2 * w2 + 2 * d_win * self.ay * np.sin(w2 * t + self.phiy) * w2,
-            win * self.az * np.cos(w3 * t + self.phiz) * w3 * w3 + 2 * d_win * self.az * np.sin(w3 * t + self.phiz) * w3
+            win * self.ax * np.cos(self.w1 * t + self.phix) * self.w1 * self.w1 + 2 * d_win * self.ax * np.sin(self.w1 * t + self.phix) * self.w1,
+            win * self.ay * np.cos(self.w2 * t + self.phiy) * self.w2 * self.w2 + 2 * d_win * self.ay * np.sin(self.w2 * t + self.phiy) * self.w2,
+            win * self.az * np.cos(self.w3 * t + self.phiz) * self.w3 * self.w3 + 2 * d_win * self.az * np.sin(self.w3 * t + self.phiz) * self.w3
         ])
         
         return x, v, a
@@ -305,6 +313,15 @@ class CrazyTrajectoryPayload(Trajectory):
         self.phix = np.random.choice([np.pi/2, 3*np.pi/2])
         self.phiy = np.random.choice([np.pi/2, 3*np.pi/2])
         self.phiz = np.random.choice([np.pi/2, 3*np.pi/2])
+
+        self.v_max = 4.0
+        self.w1, self.w2, self.w3 = [2 * np.pi * f for f in (self.f1, self.f2, self.f3)]
+
+        if max(self.ax * self.w1, self.ay * self.w2, self.az * self.w3) > self.v_max:
+            scaling_factor = max(self.ax * self.w1, self.ay * self.w2, self.az * self.w3) / self.v_max
+            self.ax *= scaling_factor
+            self.ay *= scaling_factor
+            self.az *= scaling_factor
 
         self.mP = 0.1
         self.g = 9.81
@@ -852,7 +869,6 @@ class FullCrazyTrajectory(Trajectory):
             return self.landing_traj.get(t - (self._tf - 5))  # Landing phase
 
 
-
 class FullCrazyTrajectoryPayload(Trajectory):
     def __init__(self, traj, tf=45):
         """
@@ -906,9 +922,10 @@ if __name__ == "__main__":
     # traj.plot()
     # traj.plot3d()
 
-    # crazy_traj = CrazyTrajectory()
-    # crazy_traj.plot()
-    # crazy_traj.plot3d()
+    # for _ in range(10):
+    #     crazy_traj = CrazyTrajectory()
+    #     crazy_traj.plot()
+    #     crazy_traj.plot3d()
 
     for _ in range(10):
         crazy_payload_traj = CrazyTrajectoryPayload()

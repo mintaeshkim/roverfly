@@ -288,10 +288,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.goal_pos = self.xQd[-1]
 
     def _set_initial_state(self):
-        wx = 0.2 * uniform(size=3, low=-1, high=1)
-        watt = (pi/6) * uniform(size=3, low=-1, high=1)
-        wv = 0.2 * uniform(size=3, low=-1, high=1)
-        wω = (pi/6) * uniform(size=3, low=-1, high=1)
+        wx = 0.1 * uniform(size=3, low=-1, high=1)
+        watt = (pi/12) * uniform(size=3, low=-1, high=1)
+        wv = 0.1 * uniform(size=3, low=-1, high=1)
+        wω = (pi/12) * uniform(size=3, low=-1, high=1)
         
         xQ = self.xQd[0] + wx
         attQ = euler2quat_raw(quat2euler_raw(self.init_qpos[3:7]) + watt)
