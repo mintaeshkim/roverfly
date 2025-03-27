@@ -5,7 +5,7 @@ parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.append(os.path.join(parent_dir))
 sys.path.append(os.path.join(parent_dir, 'envs'))
 import numpy as np
-from numpy import abs, asarray, clip, concatenate, copy, exp, mean, pi, round, sum, sqrt, tanh, zeros
+from numpy import abs, asarray, clip, concatenate, copy, dot, exp, mean, pi, round, sum, sqrt, tanh, zeros
 from numpy.random import choice, uniform, normal
 from numpy.linalg import inv, norm
 from typing import Dict, Union
@@ -47,7 +47,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.quadrotor_body_id = self.model.body(name="quadrotor").id
         self.env_randomizer = EnvRandomizer(model=self.model)
         self.frame_skip = frame_skip
-        self.control_scheme = "ctbr"  # "srt"
+        self.control_scheme = "ctbr"  # ["srt", "tvec", "ctbr"]
         np.random.seed(env_num)
         
         ##################################################
@@ -55,7 +55,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         ##################################################
         # region
         self.policy_freq: float    = 100.0
-        self.sim_freq: float       = 500.0 if self.control_scheme == "ctbr" else self.policy_freq
+        self.sim_freq: float       = 500.0 if self.control_scheme in ["ctbr", "tvec"] else self.policy_freq
         self.policy_dt: float      = 1 / self.policy_freq
         self.sim_dt: float         = 1 / self.sim_freq
         self.num_sims_per_env_step = int(self.sim_freq // self.policy_freq)
@@ -94,7 +94,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer          = deque(zeros((self.history_len, self.s_dim)), maxlen=self.history_len)  # [x, R, v, ω]
         self.d_buffer          = deque(zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
-        self.action_offset     = zeros(4) if self.control_scheme == "ctbr" else -0.46 * np.ones(4)
+        self.action_offset     = zeros(4) if self.control_scheme == "ctbr" else (np.zeros(3) if self.control_scheme == "tvec" else -0.46 * np.ones(4))
         self.force_offset      = 2.0 * np.ones(4)  # Warm start
         self.action_last       = self.action_offset
         self.num_episode       = 0
@@ -132,6 +132,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         ################# INITIALIZATION #################
         ##################################################
         # region
+        # region
         self._init_env()
         # endregion
         ##################################################
@@ -155,11 +156,19 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         
         # PID Control
         self.kPdφ, self.kPdθ, self.kPdψ = 1.0, 1.0, 0.8
-        self.kIdφ, self.kIdθ, self.kIdψ = 0.0, 0.0, 0.0  # 0.0001, 0.0001, 0.00008
-        self.kDdφ, self.kDdθ, self.kDdψ = 0.0, 0.0, 0.0  # 0.001, 0.001, 0.0008
+        self.kIdφ, self.kIdθ, self.kIdψ = 0.0, 0.0, 0.0
+        self.kDdφ, self.kDdθ, self.kDdψ = 0.0, 0.0, 0.0
         self.clipI = 0.15
         self.edφI, self.edθI, self.edψI = 0, 0, 0
         self.edφP_prev, self.edθP_prev, self.edψP_prev = 0, 0, 0
+
+        # Additional PPID gains for thrust vector control
+        self.kp_att = np.array([8.0, 8.0, 3.0])  # Attitude position gains
+        self.kp_rate = np.array([0.15, 0.15, 0.05])  # Rate proportional gains  
+        self.ki_rate = np.array([0.0001, 0.0001, 0.00005])  # Rate integral gains
+        self.kd_rate = np.array([0.0, 0.0, 0.0])  # Rate derivative gains
+        self.rate_integral = np.zeros(3)  # Rate error integral
+        self.max_rate_integral = 0.15  # Anti-windup limit for rates
 
         # Rotor Dynamics
         self.tau_up = 0.2164
@@ -252,9 +261,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         self.traj = ut.CrazyTrajectory(
             tf=self.max_timesteps*self.policy_dt,
-            ax=choice([-1,1])*2,
-            ay=choice([-1,1])*2,
-            az=choice([-1,1])*1,
+            ax=choice([-1,1])*2.0,
+            ay=choice([-1,1])*2.0,
+            az=choice([-1,1])*1.0,
             f1=choice([-1,1])*0.2,
             f2=choice([-1,1])*0.2,
             f3=choice([-1,1])*0.1
@@ -373,8 +382,12 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         return action_delayed
 
     def do_simulation(self, ctrl, n_frames):
-        if self.control_scheme == "ctbr": ctrl = self._ctbr2srt(ctrl)  # CTBR
-        else: ctrl = self.rotor_max_thrust * (ctrl + 1) / 2  # SRT
+        if self.control_scheme == "ctbr":
+            ctrl = self._ctbr2srt(ctrl)
+        elif self.control_scheme == "srt":
+            ctrl = self.rotor_max_thrust * (ctrl + 1) / 2
+        else: # tvec
+            ctrl = self._tvec2srt(ctrl)
         self._step_mujoco_simulation(ctrl, n_frames)
 
     def _step_mujoco_simulation(self, ctrl, n_frames):
@@ -413,7 +426,59 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             self.disturbance_wrench = concatenate([force, torque])
             self.disturbance_start = self.data.time
         self.data.xfrc_applied[self.quadrotor_body_id][0:6] = self.disturbance_wrench
+
+    def _tvec2srt(self, action):
+        """Convert thrust vector command to single rotor thrusts using PPID control"""
+        # Extract thrust vector components from action
+        thrust_vec = action[0:3]  # [Fx, Fy, Fz]
+        yaw_sp = action[3]  # Desired yaw angle
         
+        # Normalize e3_cmd (desired thrust direction)
+        e3 = np.array([0, 0, 1])  # World z-axis
+        e3_cmd = thrust_vec
+        if np.isnan(norm(e3_cmd)) or norm(e3_cmd) < 1e-4: e3_cmd = e3
+        e3_cmd = e3_cmd / norm(e3_cmd)
+        
+        # Compute desired rotation matrix
+        e1_des = np.array([cos(yaw_sp), sin(yaw_sp), 0.0])
+        e1_cmd = e1_des - dot(e1_des, e3_cmd) * e3_cmd
+        e1_cmd = e1_cmd / norm(e1_cmd)
+        e2_cmd = cross(e3_cmd, e1_cmd)
+        R_des = np.column_stack((e1_cmd, e2_cmd, e3_cmd))
+        
+        # Convert to euler angles
+        euler_des = rot2euler(R_des)
+        euler_curr = quat2euler_raw(self.data.qpos[3:7])
+        omega_curr = self.data.qvel[3:6]
+        
+        # Attitude position control (P only)
+        e_att = euler_des - euler_curr
+        
+        # Compute desired angular rates (P from attitude)
+        cmd_omega = self.kp_att * e_att
+        
+        # Rate control (PID)
+        e_rate = cmd_omega - omega_curr
+        self.rate_integral = clip(self.rate_integral + e_rate * self.sim_dt, -self.max_rate_integral, self.max_rate_integral)
+        rate_deriv = (e_rate - np.array([self.edφP_prev, self.edθP_prev, self.edψP_prev])) / self.sim_dt
+        
+        # Update previous errors for D term
+        self.edφP_prev = e_rate[0]
+        self.edθP_prev = e_rate[1]
+        self.edψP_prev = e_rate[2]
+        
+        # Compute final moments using PPID structure
+        M = (self.kp_rate * e_rate +  # P term on rates
+             self.ki_rate * self.rate_integral +  # I term on rates
+             self.kd_rate * rate_deriv)  # D term on rates
+        
+        # Convert thrust and moments to rotor forces
+        T = norm(thrust_vec)
+        f = self.A @ np.array([T, M[0], M[1], M[2]])
+        f = clip(f, 0, self.rotor_max_thrust)
+        
+        return f
+
     def _ctbr2srt(self, action):
         zcmd = dual_tanh(action[0])
         dφd = tanh(action[1])
