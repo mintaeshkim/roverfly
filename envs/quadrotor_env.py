@@ -75,8 +75,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # region
         self.is_io_history     = True
         self.is_delayed        = True
-        self.is_env_randomized = False
-        self.is_disturbance    = False
+        self.is_env_randomized = True
+        self.is_disturbance    = True
         self.is_full_traj      = False
         self.is_rotor_dynamics = False
         # endregion
@@ -393,15 +393,15 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self._step_mujoco_simulation(ctrl, n_frames)
 
     def _step_mujoco_simulation(self, ctrl, n_frames):
-        # self._rotor_dynamics(ctrl)
         self.actual_forces = self._rotor_dynamics(ctrl) if self.is_rotor_dynamics else ctrl
+        self._apply_control(ctrl=ctrl)  # if rotor dynamics: ctrl=self.actual_forces
         mj.mj_step(self.model, self.data, nstep=n_frames)
 
     def _rotor_dynamics(self, ctrl):
         desired_forces = ctrl
         tau = np.array([self.tau_up if desired_forces[i] > self.actual_forces[i] else self.tau_down for i in range(4)])
         alpha = self.sim_dt / (tau + self.sim_dt)
-        self.actual_forces = (1 - alpha) * self.actual_forces + alpha * desired_forces
+        return (1 - alpha) * self.actual_forces + alpha * desired_forces
 
     def _apply_control(self, ctrl):
         self.data.actuator("Motor0").ctrl[0] = ctrl[0]  # data.ctrl[1] # front
