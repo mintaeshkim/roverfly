@@ -47,7 +47,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.quadrotor_body_id = self.model.body(name="quadrotor").id
         self.env_randomizer = EnvRandomizer(model=self.model)
         self.frame_skip = frame_skip
-        self.control_scheme = "ctbr"  # ["srt", "tvec", "ctbr"]
+        self.control_scheme = "tvec"  # ["srt", "tvec", "ctbr"]
         np.random.seed(env_num)
         
         ##################################################
@@ -78,6 +78,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.is_env_randomized = False
         self.is_disturbance    = False
         self.is_full_traj      = False
+        self.is_rotor_dynamics = False
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -94,7 +95,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer          = deque(zeros((self.history_len, self.s_dim)), maxlen=self.history_len)  # [x, R, v, ω]
         self.d_buffer          = deque(zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
-        self.action_offset     = zeros(4) if self.control_scheme == "ctbr" else (np.zeros(3) if self.control_scheme == "tvec" else -0.46 * np.ones(4))
+        self.action_offset     = zeros(4) if self.control_scheme in ["ctbr", "tvec"] else -0.46 * np.ones(4)
         self.force_offset      = 2.0 * np.ones(4)  # Warm start
         self.action_last       = self.action_offset
         self.num_episode       = 0
@@ -165,10 +166,11 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # Additional PPID gains for thrust vector control
         self.kp_att = np.array([8.0, 8.0, 3.0])  # Attitude position gains
         self.kp_rate = np.array([0.15, 0.15, 0.05])  # Rate proportional gains  
-        self.ki_rate = np.array([0.0001, 0.0001, 0.00005])  # Rate integral gains
-        self.kd_rate = np.array([0.0, 0.0, 0.0])  # Rate derivative gains
+        self.ki_rate = np.array([0.0, 0.0, 0.0])  # Rate integral gains
+        self.kd_rate = np.array([0.0001, 0.0001, 0.0])  # Rate derivative gains
         self.rate_integral = np.zeros(3)  # Rate error integral
         self.max_rate_integral = 0.15  # Anti-windup limit for rates
+        self.moment_limit = [[-2,-2,-1],[2,2,1]]
 
         # Rotor Dynamics
         self.tau_up = 0.2164
@@ -356,8 +358,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         if self.is_full_traj: self._apply_downwash()
         if self.is_disturbance: self._apply_disturbance()
         for _ in range(self.num_sims_per_env_step):
-            action_apply = self._action_delay() if self.is_delayed else self.action
-            self.do_simulation(action_apply, self.frame_skip)  # a_{t}
+            self.action = self._action_delay() if self.is_delayed else self.action
+            self.do_simulation(self.action, self.frame_skip)  # a_{t}
         if self.render_mode == "human": self.render()
         # 2. Get Observation
         obs = self._get_obs()  # s_{t+1}
@@ -391,8 +393,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self._step_mujoco_simulation(ctrl, n_frames)
 
     def _step_mujoco_simulation(self, ctrl, n_frames):
-        self._rotor_dynamics(ctrl)
-        self._apply_control(ctrl=self.actual_forces)
+        # self._rotor_dynamics(ctrl)
+        self.actual_forces = self._rotor_dynamics(ctrl) if self.is_rotor_dynamics else ctrl
         mj.mj_step(self.model, self.data, nstep=n_frames)
 
     def _rotor_dynamics(self, ctrl):
@@ -430,20 +432,21 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     def _tvec2srt(self, action):
         """Convert thrust vector command to single rotor thrusts using PPID control"""
         # Extract thrust vector components from action
-        thrust_vec = action[0:3]  # [Fx, Fy, Fz]
-        yaw_sp = action[3]  # Desired yaw angle
-        
+        thrust_vec = concatenate([tanh(action[:2]), [dual_tanh_tvec(action[2])]]) # [Fx, Fy, Fz] (N)
+        yaw_sp = 0; self.action[3] = 0   # action[3] * np.pi    # Desired yaw angle (just set to 0 for now)
+
         # Normalize e3_cmd (desired thrust direction)
         e3 = np.array([0, 0, 1])  # World z-axis
         e3_cmd = thrust_vec
-        if np.isnan(norm(e3_cmd)) or norm(e3_cmd) < 1e-4: e3_cmd = e3
-        e3_cmd = e3_cmd / norm(e3_cmd)
-        
+        if np.isnan(np.linalg.norm(e3_cmd)) or np.linalg.norm(e3_cmd) < 1e-4:
+            e3_cmd = e3
+        e3_cmd = e3_cmd / np.linalg.norm(e3_cmd)
+
         # Compute desired rotation matrix
-        e1_des = np.array([cos(yaw_sp), sin(yaw_sp), 0.0])
-        e1_cmd = e1_des - dot(e1_des, e3_cmd) * e3_cmd
-        e1_cmd = e1_cmd / norm(e1_cmd)
-        e2_cmd = cross(e3_cmd, e1_cmd)
+        e1_des = np.array([np.cos(yaw_sp), np.sin(yaw_sp), 0.0])
+        e1_cmd = e1_des - np.dot(e1_des, e3_cmd) * e3_cmd
+        e1_cmd = e1_cmd / np.linalg.norm(e1_cmd)
+        e2_cmd = np.cross(e3_cmd, e1_cmd)
         R_des = np.column_stack((e1_cmd, e2_cmd, e3_cmd))
         
         # Convert to euler angles
@@ -461,22 +464,23 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         e_rate = cmd_omega - omega_curr
         self.rate_integral = clip(self.rate_integral + e_rate * self.sim_dt, -self.max_rate_integral, self.max_rate_integral)
         rate_deriv = (e_rate - np.array([self.edφP_prev, self.edθP_prev, self.edψP_prev])) / self.sim_dt
-        
+
         # Update previous errors for D term
         self.edφP_prev = e_rate[0]
         self.edθP_prev = e_rate[1]
         self.edψP_prev = e_rate[2]
-        
+
         # Compute final moments using PPID structure
         M = (self.kp_rate * e_rate +  # P term on rates
              self.ki_rate * self.rate_integral +  # I term on rates
              self.kd_rate * rate_deriv)  # D term on rates
-        
+        M = np.clip(M,self.moment_limit[0], self.moment_limit[1])
+
         # Convert thrust and moments to rotor forces
-        T = norm(thrust_vec)
+        T = np.linalg.norm(thrust_vec)
         f = self.A @ np.array([T, M[0], M[1], M[2]])
         f = clip(f, 0, self.rotor_max_thrust)
-        
+
         return f
 
     def _ctbr2srt(self, action):
