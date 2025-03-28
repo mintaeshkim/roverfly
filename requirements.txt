@@ -1,9 +1,14 @@
+glfw==2.8.0
 gymnasium==0.29.1
 matplotlib==3.8.2
 mpi4py==3.1.5
+mujoco==3.2.7
+mujoco-py==2.1.2.14
 # numba==0.58.1
 numpy>=1.26.3
 scipy>=1.12.0
 stable_baselines3==2.2.1
-# tensorflow>=2.15.0
-tensorflow_macos>=2.15.0
+tensorflow==2.16.2
+torch==2.6.0
+tqdm==4.67.1
+# tensorflow_macos==2.16.2
