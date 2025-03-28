@@ -432,7 +432,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     def _tvec2srt(self, action):
         """Convert thrust vector command to single rotor thrusts using PPID control"""
         # Extract thrust vector components from action
-        thrust_vec = concatenate([tanh(action[:2]), [dual_tanh_tvec(action[2])]]) # [Fx, Fy, Fz] (N)
+        thrust_vec = concatenate([5 * tanh(action[:2]), [dual_tanh_tvec(action[2])]]) # [Fx, Fy, Fz] (N)
         yaw_sp = 0; self.action[3] = 0   # action[3] * np.pi    # Desired yaw angle (just set to 0 for now)
 
         # Normalize e3_cmd (desired thrust direction)

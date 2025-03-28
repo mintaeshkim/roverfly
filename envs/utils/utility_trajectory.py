@@ -922,12 +922,12 @@ if __name__ == "__main__":
     # traj.plot()
     # traj.plot3d()
 
-    # for _ in range(10):
-    #     crazy_traj = CrazyTrajectory()
-    #     crazy_traj.plot()
-    #     crazy_traj.plot3d()
-
     for _ in range(10):
-        crazy_payload_traj = CrazyTrajectoryPayload()
-        crazy_payload_traj.plot()
-        crazy_payload_traj.plot3d_payload()
+        crazy_traj = CrazyTrajectory()
+        crazy_traj.plot()
+        crazy_traj.plot3d()
+
+    # for _ in range(10):
+    #     crazy_payload_traj = CrazyTrajectoryPayload()
+    #     crazy_payload_traj.plot()
+    #     crazy_payload_traj.plot3d_payload()
