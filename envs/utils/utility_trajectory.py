@@ -844,11 +844,11 @@ class FullCrazyTrajectory(Trajectory):
         Full trajectory that includes:
         1. Smooth takeoff (0-5s) using a QuinticTrajectory.
         2. Crazy trajectory (5-35s).
-        3. Smooth landing (35-45s) using a QuinticTrajectory.
+        3. Smooth landing (35-40s) using a QuinticTrajectory.
 
         Args:
             traj (Trajectory): An instance of CrazyTrajectory.
-            tf (float): Total duration of the trajectory (default: 45s).
+            tf (float): Total duration of the trajectory (default: 40s).
         """
         super().__init__(tf)
         self.crazy_traj = traj
@@ -870,12 +870,12 @@ class FullCrazyTrajectory(Trajectory):
 
 
 class FullCrazyTrajectoryPayload(Trajectory):
-    def __init__(self, traj, tf=45):
+    def __init__(self, traj, tf=40):
         """
         Full trajectory that includes:
         1. Smooth takeoff (0-5s) using a QuinticTrajectory.
-        2. Crazy trajectory with payload (5-40s).
-        3. Smooth landing (40-45s) using a QuinticTrajectory.
+        2. Crazy trajectory with payload (5-35s).
+        3. Smooth landing (35-40s) using a QuinticTrajectory.
 
         Args:
             traj (Trajectory): An instance of CrazyTrajectoryPayload.
@@ -917,15 +917,15 @@ class FullCrazyTrajectoryPayload(Trajectory):
         
 
 if __name__ == "__main__":
-    # traj = FullCrazyTrajectory(tf=45, traj=CrazyTrajectory(tf=30, ax=1, ay=1, az=1, f1=0.5, f2=0.5, f3=0.5))
-    # traj = FullCrazyTrajectory(tf=45, traj=CrazyTrajectory(tf=30, ax=0, ay=0, az=0, f1=0, f2=0, f3=0))
-    # traj.plot()
-    # traj.plot3d()
+    traj = FullCrazyTrajectory(tf=40, traj=CrazyTrajectory(tf=30, ax=1, ay=1, az=1, f1=0.2, f2=0.2, f3=0.2))
+    # traj = FullCrazyTrajectory(tf=40, traj=CrazyTrajectory(tf=30, ax=0, ay=0, az=0, f1=0, f2=0, f3=0))
+    traj.plot()
+    traj.plot3d()
 
-    for _ in range(10):
-        crazy_traj = CrazyTrajectory()
-        crazy_traj.plot()
-        crazy_traj.plot3d()
+    # for _ in range(10):
+    #     crazy_traj = CrazyTrajectory()
+    #     crazy_traj.plot()
+    #     crazy_traj.plot3d()
 
     # for _ in range(10):
     #     crazy_payload_traj = CrazyTrajectoryPayload()

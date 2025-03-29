@@ -34,7 +34,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     
     def __init__(
         self,
-        max_timesteps:int = 4500,
+        max_timesteps:int = 4000,
         xml_file: str = "../assets/quadrotor_falcon.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
@@ -64,10 +64,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         ###################### TIME ######################
         ##################################################
         # region
-        self.max_timesteps: int  = max_timesteps
-        self.timestep: int       = 0
-        self.time_in_sec: float  = 0.0
-        self.traj_timesteps: int = 3000
+        self.max_timesteps: int   = max_timesteps
+        self.timestep: int        = 0
+        self.time_in_sec: float   = 0.0
+        self.track_timesteps: int = 3000
         # endregion
         ##################################################
         #################### BOOLEANS ####################
@@ -77,8 +77,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.is_delayed        = True
         self.is_env_randomized = True
         self.is_disturbance    = True
-        self.is_full_traj      = False
+        self.is_full_traj      = True
         self.is_rotor_dynamics = False
+        self.is_record_action  = False
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -233,6 +234,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer.extend([s_curr] * self.history_len)
         self.d_buffer.extend([d_curr] * self.history_len)
         self.a_buffer.extend([a_curr] * self.history_len)
+        if self.is_record_action: self.action_record = zeros((self.max_timesteps, self.a_dim))
 
     def reset(self, seed=None, randomize=None):
         # super().reset(seed=self.env_num)
@@ -259,10 +261,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         #                                 num_sims_per_env_step=self.num_sims_per_env_step)
 
     def _reset_model(self):
-        if not self.is_full_traj: self.max_timesteps = self.traj_timesteps
-
+        if not self.is_full_traj: self.max_timesteps = self.track_timesteps
+        
         self.traj = ut.CrazyTrajectory(
-            tf=self.max_timesteps*self.policy_dt,
+            tf=self.track_timesteps*self.policy_dt,
             ax=choice([-1,1])*2.0,
             ay=choice([-1,1])*2.0,
             az=choice([-1,1])*1.0,
@@ -271,7 +273,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             f3=choice([-1,1])*0.1
         )
         
-        if self.is_full_traj: self.traj = ut.FullCrazyTrajectory(tf=45, traj=self.traj)
+        if self.is_full_traj: self.traj = ut.FullCrazyTrajectory(tf=40, traj=self.traj)
 
         # self.traj.plot()
         # self.traj.plot3d()
@@ -304,6 +306,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         wv = 0.1 * uniform(size=3, low=-1, high=1)
         wω = (pi/12) * uniform(size=3, low=-1, high=1)
         
+        if self.is_full_traj:
+            wx[-1], wv[-1] = 0, 0
+            watt, wω = zeros(3), zeros(3)
+
         xQ = self.xQd[0] + wx
         attQ = euler2quat_raw(quat2euler_raw(self.init_qpos[3:7]) + watt)
         vQ = self.vQd[0] + wv
@@ -352,7 +358,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
     def step(self, action, restore=False):
         # 1. Simulate for Single Time Step
-        # if self.timestep < self.max_timesteps: self.action_record[self.timestep] = action
         self.action = action
         if self.is_delayed: self.action_queue.append([self.data.time, self.action])
         if self.is_full_traj: self._apply_downwash()
@@ -438,14 +443,13 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # Normalize e3_cmd (desired thrust direction)
         e3 = np.array([0, 0, 1])  # World z-axis
         e3_cmd = thrust_vec
-        if np.isnan(np.linalg.norm(e3_cmd)) or np.linalg.norm(e3_cmd) < 1e-4:
-            e3_cmd = e3
-        e3_cmd = e3_cmd / np.linalg.norm(e3_cmd)
+        if np.isnan(norm(e3_cmd)) or norm(e3_cmd) < 1e-4: e3_cmd = e3
+        e3_cmd = e3_cmd / norm(e3_cmd)
 
         # Compute desired rotation matrix
-        e1_des = np.array([np.cos(yaw_sp), np.sin(yaw_sp), 0.0])
-        e1_cmd = e1_des - np.dot(e1_des, e3_cmd) * e3_cmd
-        e1_cmd = e1_cmd / np.linalg.norm(e1_cmd)
+        e1_des = np.array([cos(yaw_sp), sin(yaw_sp), 0.0])
+        e1_cmd = e1_des - dot(e1_des, e3_cmd) * e3_cmd
+        e1_cmd = e1_cmd / norm(e1_cmd)
         e2_cmd = np.cross(e3_cmd, e1_cmd)
         R_des = np.column_stack((e1_cmd, e2_cmd, e3_cmd))
         
@@ -474,10 +478,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         M = (self.kp_rate * e_rate +  # P term on rates
              self.ki_rate * self.rate_integral +  # I term on rates
              self.kd_rate * rate_deriv)  # D term on rates
-        M = np.clip(M,self.moment_limit[0], self.moment_limit[1])
+        M = clip(M,self.moment_limit[0], self.moment_limit[1])
 
         # Convert thrust and moments to rotor forces
-        T = np.linalg.norm(thrust_vec)
+        T = norm(thrust_vec)
         f = self.A @ np.array([T, M[0], M[1], M[2]])
         f = clip(f, 0, self.rotor_max_thrust)
 
@@ -524,7 +528,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         return f
 
-    def _update_data(self, reward, step=True):
+    def _update_data(self, reward, step=False):
         """ TEST """
         # self._record()
         # Past
@@ -532,6 +536,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.d_buffer.append(concatenate([self.xQd[self.timestep] / self.pos_bound, self.vQd[self.timestep] / self.vel_bound]))
         self.a_buffer.append(self.action)
         self.action_last = self.action
+        if self.is_record_action and self.timestep < self.max_timesteps: self.action_record[self.timestep] = self.action
         # Present
         self.time_in_sec = round(self.time_in_sec + self.policy_dt, 2)
         self.timestep += 1
@@ -581,7 +586,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         exQ = norm(xQ - xQd)
         evQ = norm(vQ - vQd)
 
-        if 5.0 <= self.time_in_sec <= 40.0 and xQ[2] < 0.01:  # Crash except for takeoff and landing
+        if 5.0 <= self.time_in_sec <= 35.0 and xQ[2] < 0.01:  # Crash except for takeoff and landing
             self.num_episode += 1
             print("Env {env_num} | Ep {epi} | Crashed | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
@@ -627,7 +632,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                   time=round(self.time_in_sec, 2),
                   pos_err=round(exQ, 2),
                   rew=round(self.total_reward, 1)))
-            # self.plot_action()
+            if self.is_record_action: self.plot_action()
             return True
         else:
             return False
@@ -648,20 +653,20 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         fig, axs = plt.subplots(4, 1, figsize=(12, 10))
         timesteps = np.arange(self.max_timesteps)
 
-        axs[0].plot(timesteps, self.action_record[:, 0], label='collective thrust', linestyle='-')
-        axs[0].set_title('collective thrust')
+        axs[0].plot(timesteps, self.action_record[:, 0], label='action_0', linestyle='-')
+        axs[0].set_title('action_0')
         axs[0].legend()
 
-        axs[1].plot(timesteps, self.action_record[:, 1], label='body rate x', linestyle='-')
-        axs[1].set_title('body rate x')
+        axs[1].plot(timesteps, self.action_record[:, 1], label='action_1', linestyle='-')
+        axs[1].set_title('action_1')
         axs[1].legend()
 
-        axs[2].plot(timesteps, self.action_record[:, 2], label='body rate y', linestyle='-')
-        axs[2].set_title('body rate y')
+        axs[2].plot(timesteps, self.action_record[:, 2], label='action_2', linestyle='-')
+        axs[2].set_title('action_2')
         axs[2].legend()
 
-        axs[3].plot(timesteps, self.action_record[:, 3], label='body rate z', linestyle='-')
-        axs[3].set_title('body rate z')
+        axs[3].plot(timesteps, self.action_record[:, 3], label='action_3', linestyle='-')
+        axs[3].set_title('action_3')
         axs[3].legend()
 
         plt.tight_layout()

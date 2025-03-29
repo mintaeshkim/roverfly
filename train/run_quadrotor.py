@@ -155,7 +155,7 @@ def main():
                 gamma=0.99,
                 gae_lambda=0.98,
                 clip_range=linear_schedule(0.05),
-                ent_coef=0.0, # 0.001
+                ent_coef=0.001, # 0.001
                 verbose=1,
                 policy_kwargs={'activation_fn':activation_fn, 'net_arch':net_arch},
                 tensorboard_log=log_path,
