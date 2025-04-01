@@ -239,6 +239,12 @@ class CrazyTrajectory(Trajectory):
             self.ax *= scaling_factor
             self.ay *= scaling_factor
             self.az *= scaling_factor
+        
+    def __str__(self):
+        return (f"CrazyTrajectory:\n"
+                f"  ax = {self.ax:.3f}, ay = {self.ay:.3f}, az = {self.az:.3f}\n"
+                f"  f1 = {self.f1:.3f}, f2 = {self.f2:.3f}, f3 = {self.f3:.3f}\n"
+                f"  phix = {self.phix:.3f}, phiy = {self.phiy:.3f}, phiz = {self.phiz:.3f}")
 
     def window(self, t):
         """Window function for smooth velocity transitions at t=3s and t=tf-3s"""
@@ -326,6 +332,12 @@ class CrazyTrajectoryPayload(Trajectory):
         self.mP = 0.1
         self.g = 9.81
         self.e3 = np.array([0,0,1])
+    
+    def __str__(self):
+        return (f"CrazyTrajectory:\n"
+                f"  ax = {self.ax:.3f}, ay = {self.ay:.3f}, az = {self.az:.3f}\n"
+                f"  f1 = {self.f1:.3f}, f2 = {self.f2:.3f}, f3 = {self.f3:.3f}\n"
+                f"  phix = {self.phix:.3f}, phiy = {self.phiy:.3f}, phiz = {self.phiz:.3f}")
 
     def window(self, t):
         """Window function for smooth velocity transitions at t=3s and t=tf-3s"""
@@ -917,10 +929,14 @@ class FullCrazyTrajectoryPayload(Trajectory):
         
 
 if __name__ == "__main__":
-    traj = FullCrazyTrajectory(tf=40, traj=CrazyTrajectory(tf=30, ax=1, ay=1, az=1, f1=0.2, f2=0.2, f3=0.2))
+    # traj = FullCrazyTrajectory(tf=40, traj=CrazyTrajectory(tf=30, ax=1, ay=1, az=1, f1=0.2, f2=0.2, f3=0.2))
     # traj = FullCrazyTrajectory(tf=40, traj=CrazyTrajectory(tf=30, ax=0, ay=0, az=0, f1=0, f2=0, f3=0))
-    traj.plot()
-    traj.plot3d()
+    
+    for _ in range(10):
+        crazy_traj = CrazyTrajectory()
+        full_crazy_traj = FullCrazyTrajectory(traj=crazy_traj)
+        full_crazy_traj.plot()
+        full_crazy_traj.plot3d()
 
     # for _ in range(10):
     #     crazy_traj = CrazyTrajectory()

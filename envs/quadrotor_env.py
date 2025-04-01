@@ -272,7 +272,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             f2=choice([-1,1])*0.2,
             f3=choice([-1,1])*0.1
         )
-        
+        # print(self.traj)
+
         if self.is_full_traj: self.traj = ut.FullCrazyTrajectory(tf=40, traj=self.traj)
 
         # self.traj.plot()
@@ -550,7 +551,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         
         w_xQ = 1.0
         w_vQ = 0.5
-        w_ψQ = 1.0
+        w_ψQ = 0.0
         w_ωQ = 0.5
         w_Δa = 0.1
 
