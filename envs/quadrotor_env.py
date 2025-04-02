@@ -272,6 +272,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             f2=choice([-1,1])*0.2,
             f3=choice([-1,1])*0.1
         )
+        # self.traj = ut.CrazyTrajectory(tf=self.track_timesteps*self.policy_dt,
+        #                                ax=1, ay=-1, az=0.5, f1=0.2, f2=0.3, f3=0.25)
         # print(self.traj)
 
         if self.is_full_traj: self.traj = ut.FullCrazyTrajectory(tf=40, traj=self.traj)
@@ -334,7 +336,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         xQ_ff = self.xQ - self.xQd[self.timestep : self.timestep + self.future_len]
         vQ_ff = self.vQ - self.vQd[self.timestep : self.timestep + self.future_len]
-        ff = concatenate([(xQ_ff @ self.R).flatten(), (vQ_ff @ self.R).flatten()])
+        ff = concatenate([(xQ_ff @ self.R).flatten(), (vQ_ff @ self.R).flatten()])xw
 
         return concatenate([self.obs_curr, io_history, ff])
 
@@ -549,11 +551,11 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     def _get_reward(self):
         names = ['xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'Δa_rew']
         
-        w_xQ = 1.0
+        w_xQ = 2.0
         w_vQ = 0.5
         w_ψQ = 0.0
         w_ωQ = 0.5
-        w_Δa = 0.1
+        w_Δa = 0.2
 
         reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
         weights = reward_weights / sum(reward_weights)
@@ -670,111 +672,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         axs[3].set_title('action_3')
         axs[3].legend()
 
-        plt.tight_layout()
-        plt.show()
-
-
-
-class TestRecord:
-    def __init__(self, max_timesteps, record_object, num_sims_per_env_step):
-        self.max_timesteps = max_timesteps
-        self.num_sims_per_env_step = num_sims_per_env_step
-        
-        self.max_steps = self.max_timesteps // self.num_sims_per_env_step
-        self.step = 0
-        self.rec_obj = record_object
-
-        self.pos_x = zeros(self.max_steps)
-        self.pos_y = zeros(self.max_steps)
-        self.pos_z = zeros(self.max_steps)
-        self.pos_x_d = zeros(self.max_steps)
-        self.pos_y_d = zeros(self.max_steps)
-        self.pos_z_d = zeros(self.max_steps)
-
-        self.vel_x = zeros(self.max_steps)
-        self.vel_y = zeros(self.max_steps)
-        self.vel_z = zeros(self.max_steps)
-        self.vel_x_d = zeros(self.max_steps)
-        self.vel_y_d = zeros(self.max_steps)
-        self.vel_z_d = zeros(self.max_steps)
-    
-    def record(self, pos_curr, vel_curr, pos_d, vel_d):
-        self.pos_x[self.step] = pos_curr[0]
-        self.pos_y[self.step] = pos_curr[1]
-        self.pos_z[self.step] = pos_curr[2]
-        self.vel_x[self.step] = vel_curr[0]
-        self.vel_y[self.step] = vel_curr[1]
-        self.vel_z[self.step] = vel_curr[2]
-
-        self.pos_x_d[self.step] = pos_d[0]
-        self.pos_y_d[self.step] = pos_d[1]
-        self.pos_z_d[self.step] = pos_d[2]
-        self.vel_x_d[self.step] = vel_d[0]
-        self.vel_y_d[self.step] = vel_d[1]
-        self.vel_z_d[self.step] = vel_d[2]
-
-        self.step += 1
-    
-    def reset(self):
-        self.max_steps = self.max_timesteps // self.num_sims_per_env_step
-        self.step = 0
-
-        self.pos_x = zeros(self.max_steps)
-        self.pos_y = zeros(self.max_steps)
-        self.pos_z = zeros(self.max_steps)
-        self.pos_x_d = zeros(self.max_steps)
-        self.pos_y_d = zeros(self.max_steps)
-        self.pos_z_d = zeros(self.max_steps)
-
-        self.vel_x = zeros(self.max_steps)
-        self.vel_y = zeros(self.max_steps)
-        self.vel_z = zeros(self.max_steps)
-        self.vel_x_d = zeros(self.max_steps)
-        self.vel_y_d = zeros(self.max_steps)
-        self.vel_z_d = zeros(self.max_steps)
-
-    def plot_error(self):
-        # Plotting
-        fig, axs = plt.subplots(6, 1, figsize=(10, 18))
-        timesteps = np.arange(self.max_steps)
-
-        # pos_x and pos_x_d
-        axs[0].plot(timesteps, self.pos_x, label='pos_x '+self.rec_obj, linestyle='-')
-        axs[0].plot(timesteps, self.pos_x_d, label='pos_x_d '+self.rec_obj, linestyle='--')
-        axs[0].set_title('x '+self.rec_obj)
-        axs[0].legend()
-
-        # pos_y and pos_y_d
-        axs[1].plot(timesteps, self.pos_y, label='pos_y '+self.rec_obj, linestyle='-')
-        axs[1].plot(timesteps, self.pos_y_d, label='pos_y_d '+self.rec_obj, linestyle='--')
-        axs[1].set_title('y '+self.rec_obj)
-        axs[1].legend()
-
-        # pos_z and pos_z_d
-        axs[2].plot(timesteps, self.pos_z, label='pos_z '+self.rec_obj, linestyle='-')
-        axs[2].plot(timesteps, self.pos_z_d, label='pos_z_d '+self.rec_obj, linestyle='--')
-        axs[2].set_title('z '+self.rec_obj)
-        axs[2].legend()
-
-        # vel_x and vel_x_d
-        axs[3].plot(timesteps, self.vel_x, label='vel_x '+self.rec_obj, linestyle='-')
-        axs[3].plot(timesteps, self.vel_x_d, label='vel_x_d '+self.rec_obj, linestyle='--')
-        axs[3].set_title('vx '+self.rec_obj)
-        axs[3].legend()
-
-        # vel_y and vel_y_d
-        axs[4].plot(timesteps, self.vel_y, label='vel_y '+self.rec_obj, linestyle='-')
-        axs[4].plot(timesteps, self.vel_y_d, label='vel_y_d '+self.rec_obj, linestyle='--')
-        axs[4].set_title('vy '+self.rec_obj)
-        axs[4].legend()
-
-        # vel_z and vel_z_d
-        axs[5].plot(timesteps, self.vel_z, label='vel_z '+self.rec_obj, linestyle='-')
-        axs[5].plot(timesteps, self.vel_z_d, label='vel_z_d '+self.rec_obj, linestyle='--')
-        axs[5].set_title('vz '+self.rec_obj)
-        axs[5].legend()
-
-        # Layout adjustment
         plt.tight_layout()
         plt.show()
 

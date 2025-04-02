@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib.pyplot as plt
+
 
 def rot_x(theta):
     Rx = np.array([[1, 0, 0],
@@ -54,3 +56,15 @@ def dual_tanh_tvec(x):
     tanh1 = mg * (1 + np.tanh(3 * x + 2)) / 2
     tanh2 = (max_Fz - mg) * (1 + np.tanh(3 * x - 2)) / 2
     return tanh1 + tanh2
+
+if __name__ == "__main__":
+
+    x_vals = np.linspace(-1, 1, 500)
+    y_vals = dual_tanh_tvec(x_vals)
+
+    plt.plot(x_vals, y_vals)
+    plt.xlabel("x")
+    plt.ylabel("dual_tanh_tvec(x)")
+    plt.title("Graph of dual_tanh_tvec from x = -1 to x = 1")
+    plt.grid(True)
+    plt.show()
