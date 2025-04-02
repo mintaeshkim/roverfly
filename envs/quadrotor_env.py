@@ -76,10 +76,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.is_io_history     = True
         self.is_delayed        = True
         self.is_env_randomized = True
-        self.is_disturbance    = True
-        self.is_full_traj      = True
+        self.is_disturbance    = False
+        self.is_full_traj      = False
         self.is_rotor_dynamics = False
-        self.is_record_action  = False
+        self.is_record_action  = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -97,7 +97,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.d_buffer          = deque(zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
         self.action_offset     = zeros(4) if self.control_scheme in ["ctbr", "tvec"] else -0.46 * np.ones(4)
-        self.force_offset      = 2.0 * np.ones(4)  # Warm start
+        self.force_offset      = 2.0 * np.ones(4)  # Warm start (for rotor dynamics)
         self.action_last       = self.action_offset
         self.num_episode       = 0
         self.action_space      = self._set_action_space()
@@ -109,8 +109,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # region
         self.pos_bound = 3.0
         self.vel_bound = 5.0
-        self.pos_err_bound = 1.0
-        self.vel_err_bound = 4.0
+        self.pos_err_bound = 0.5
+        self.vel_err_bound = 2.0
         # endregion
         ##################################################
         ################### MUJOCOENV ####################
@@ -272,13 +272,13 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             f2=choice([-1,1])*0.2,
             f3=choice([-1,1])*0.1
         )
-        # self.traj = ut.CrazyTrajectory(tf=self.track_timesteps*self.policy_dt,
-        #                                ax=1, ay=-1, az=0.5, f1=0.2, f2=0.3, f3=0.25)
-        # print(self.traj)
+
+        self.traj = ut.CrazyTrajectory(
+            tf=self.track_timesteps*self.policy_dt, ax=1, ay=-1, az=0.5, f1=0.2, f2=0.3, f3=0.25)
 
         if self.is_full_traj: self.traj = ut.FullCrazyTrajectory(tf=40, traj=self.traj)
 
-        # self.traj.plot()
+        self.traj.plot()
         # self.traj.plot3d()
 
         """ Generate trajectory """
@@ -336,7 +336,11 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         xQ_ff = self.xQ - self.xQd[self.timestep : self.timestep + self.future_len]
         vQ_ff = self.vQ - self.vQd[self.timestep : self.timestep + self.future_len]
-        ff = concatenate([(xQ_ff @ self.R).flatten(), (vQ_ff @ self.R).flatten()])xw
+        ff = concatenate([(xQ_ff @ self.R).flatten(), (vQ_ff @ self.R).flatten()])
+
+        print(round(self.xQ, 3))
+        print(round(self.xQd[self.timestep], 3))
+        print()
 
         return concatenate([self.obs_curr, io_history, ff])
 
@@ -551,20 +555,20 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
     def _get_reward(self):
         names = ['xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'Δa_rew']
         
-        w_xQ = 2.0
-        w_vQ = 0.5
+        w_xQ = 1.0
+        w_vQ = 0.25
         w_ψQ = 0.0
-        w_ωQ = 0.5
-        w_Δa = 0.2
+        w_ωQ = 0.25
+        w_Δa = 0.1
 
         reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
         weights = reward_weights / sum(reward_weights)
 
-        scale_xQ = 1.0/0.5
-        scale_vQ = 1.0/2.0
+        scale_xQ = 1.0/0.1
+        scale_vQ = 1.0/0.5
         scale_ψQ = 1.0/(pi/2)
-        scale_ωQ = 1.0/0.25
-        scale_Δa = 1.0/0.5
+        scale_ωQ = 1.0/0.1
+        scale_Δa = 1.0/0.2
 
         exQ = norm(self.data.qpos[0:3] - self.xQd[self.timestep], ord=2)
         evQ = norm(self.data.qvel[0:3] - self.vQd[self.timestep], ord=2)
