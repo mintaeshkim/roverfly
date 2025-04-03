@@ -233,7 +233,7 @@ class ContinuousActionFilter:
         self.a_buffer = a_buffer
         self.dt = dt
 
-    def filter_action(self, new_action):
+    def filter(self, new_action):
         if len(self.a_buffer) == 0:
             self.a_buffer.append(new_action)
             return new_action
@@ -263,7 +263,7 @@ if __name__ == "__main__":
   filtered_actions = np.zeros((timesteps, a_dim))
 
   for t in range(timesteps):
-      filtered_actions[t] = action_filter.filter_action(raw_actions[t])
+      filtered_actions[t] = action_filter.filter(raw_actions[t])
 
   plt.figure(figsize=(10, 6))
   for i in range(a_dim):

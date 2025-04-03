@@ -385,7 +385,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
 
     def step(self, action, restore=False):
         # 1. Simulate single timestep
-        if self.is_action_filter: self.action = self.action_filter.filter_action(action)
+        if self.is_action_filter: self.action = self.action_filter.filter(action)
         if self.is_delayed: self.action_queue.append([self.data.time, self.action])
         if self.is_full_traj: self._apply_downwash()
         if self.is_disturbed: self._apply_disturbance()

@@ -52,7 +52,7 @@ class EnvRandomizer(object):
         # R = quat2rot(model.body_iquat)
         # print("full_inertia: \n", R @ np.diag(model.body_inertia) @ R.T)
         # print("actuator_gear: \n", model.actuator_gear)
-
+        
         return model
 
     def reset_env(self, model):

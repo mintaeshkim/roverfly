@@ -23,7 +23,7 @@ class OnnxableSB3Policy(th.nn.Module):
         # policy() returns `actions, values, log_prob` for PPO
         return self.policy(observation, deterministic=True)
 
-ID = "tvec_3"
+ID = "tvec_1"
 # Example: model = PPO("MlpPolicy", "Pendulum-v1")
 # PPO("MlpPolicy", "Pendulum-v1").save("PathToTrainedModel")
 # model = PPO.load("saved_models/saved_model_"+ID+"/best_model.zip", device="cpu")

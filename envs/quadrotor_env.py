@@ -23,6 +23,7 @@ from envs.utils.utility_functions import *
 from envs.utils.rotation_transformations import *
 from envs.utils.render_util import *
 from envs.utils.mj_utils import *
+from envs.utils.action_filter import ContinuousActionFilter
 import time
 import matplotlib.pyplot as plt
 
@@ -76,10 +77,11 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.is_io_history     = True
         self.is_delayed        = True
         self.is_env_randomized = True
-        self.is_disturbance    = False
+        self.is_disturbance    = True
         self.is_full_traj      = False
         self.is_rotor_dynamics = False
-        self.is_record_action  = True
+        self.is_action_filter  = True
+        self.is_record_action  = False
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -245,6 +247,14 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         obs = self._get_obs()
         self.info = self._get_reset_info()
         if self.is_env_randomized: self.model = self.env_randomizer.randomize_env(self.model)
+        if self.is_action_filter:
+            self.action_filter = ContinuousActionFilter(
+                history_len=self.history_len,
+                a_dim=self.a_dim,
+                lipschitz_const = 10.0,
+                a_buffer=self.a_buffer,
+                dt=self.policy_dt
+            )
         return obs, self.info
   
     def _reset_env(self):
@@ -273,12 +283,11 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             f3=choice([-1,1])*0.1
         )
 
-        self.traj = ut.CrazyTrajectory(
-            tf=self.track_timesteps*self.policy_dt, ax=1, ay=-1, az=0.5, f1=0.2, f2=0.3, f3=0.25)
+        # self.traj = ut.CrazyTrajectory(tf=self.track_timesteps*self.policy_dt, ax=1, ay=-1, az=0.5, f1=0.2, f2=0.3, f3=0.25)
 
         if self.is_full_traj: self.traj = ut.FullCrazyTrajectory(tf=40, traj=self.traj)
 
-        self.traj.plot()
+        # self.traj.plot()
         # self.traj.plot3d()
 
         """ Generate trajectory """
@@ -338,9 +347,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         vQ_ff = self.vQ - self.vQd[self.timestep : self.timestep + self.future_len]
         ff = concatenate([(xQ_ff @ self.R).flatten(), (vQ_ff @ self.R).flatten()])
 
-        print(round(self.xQ, 3))
-        print(round(self.xQd[self.timestep], 3))
-        print()
+        # print(round(self.xQ, 3))
+        # print(round(self.xQd[self.timestep], 3))
+        # print()
 
         return concatenate([self.obs_curr, io_history, ff])
 
@@ -365,7 +374,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
     def step(self, action, restore=False):
         # 1. Simulate for Single Time Step
-        self.action = action
+        self.action = self.action_filter.filter(action) if self.is_action_filter else action
         if self.is_delayed: self.action_queue.append([self.data.time, self.action])
         if self.is_full_traj: self._apply_downwash()
         if self.is_disturbance: self._apply_disturbance()
@@ -559,7 +568,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         w_vQ = 0.25
         w_ψQ = 0.0
         w_ωQ = 0.25
-        w_Δa = 0.1
+        w_Δa = 0.25
 
         reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
         weights = reward_weights / sum(reward_weights)
@@ -568,7 +577,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         scale_vQ = 1.0/0.5
         scale_ψQ = 1.0/(pi/2)
         scale_ωQ = 1.0/0.1
-        scale_Δa = 1.0/0.2
+        scale_Δa = 1.0/0.1  # 0.2
 
         exQ = norm(self.data.qpos[0:3] - self.xQd[self.timestep], ord=2)
         evQ = norm(self.data.qvel[0:3] - self.vQd[self.timestep], ord=2)
@@ -662,23 +671,26 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
         axs[0].plot(timesteps, self.action_record[:, 0], label='action_0', linestyle='-')
         axs[0].set_title('action_0')
+        axs[0].set_ylim([-1, 1])
         axs[0].legend()
 
         axs[1].plot(timesteps, self.action_record[:, 1], label='action_1', linestyle='-')
         axs[1].set_title('action_1')
+        axs[1].set_ylim([-1, 1])
         axs[1].legend()
 
         axs[2].plot(timesteps, self.action_record[:, 2], label='action_2', linestyle='-')
         axs[2].set_title('action_2')
+        axs[2].set_ylim([-1, 1])
         axs[2].legend()
 
         axs[3].plot(timesteps, self.action_record[:, 3], label='action_3', linestyle='-')
         axs[3].set_title('action_3')
+        axs[3].set_ylim([-1, 1])
         axs[3].legend()
 
         plt.tight_layout()
         plt.show()
-
 
 
 if __name__ == "__main__":
