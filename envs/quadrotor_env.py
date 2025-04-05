@@ -80,8 +80,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.is_disturbance    = True
         self.is_full_traj      = False
         self.is_rotor_dynamics = False
-        self.is_action_filter  = True
-        self.is_record_action  = False
+        self.is_action_filter  = False
+        self.is_record_action  = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -158,7 +158,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
                                [-self.d, -self.d, self.d, self.d],
                                [-self.κ, self.κ, -self.κ, self.κ]]))
         
-        # PID Control
+        # PID Control (ctbr)
         self.kPdφ, self.kPdθ, self.kPdψ = 1.0, 1.0, 0.8
         self.kIdφ, self.kIdθ, self.kIdψ = 0.0, 0.0, 0.0
         self.kDdφ, self.kDdθ, self.kDdψ = 0.0, 0.0, 0.0
@@ -166,7 +166,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.edφI, self.edθI, self.edψI = 0, 0, 0
         self.edφP_prev, self.edθP_prev, self.edψP_prev = 0, 0, 0
 
-        # Additional PPID gains for thrust vector control
+        # Additional PPID gains for thrust vector control (tvec)
         self.kp_att = np.array([8.0, 8.0, 3.0])  # Attitude position gains
         self.kp_rate = np.array([0.15, 0.15, 0.05])  # Rate proportional gains  
         self.ki_rate = np.array([0.0, 0.0, 0.0])  # Rate integral gains
@@ -391,6 +391,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         terminated = self._terminated()
         truncated = self._truncated()
         self.info["terminated"] = terminated
+        self.info["subreward"] = reward_dict
         # 5. Update Data
         self._update_data(reward=reward, step=True)
 
@@ -451,7 +452,18 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.data.xfrc_applied[self.quadrotor_body_id][0:6] = self.disturbance_wrench
 
     def _tvec2srt(self, action):
-        """Convert thrust vector command to single rotor thrusts using PPID control"""
+        """Convert thrust vector command to single rotor thrusts using PPID control
+           Control framework:
+            High-level action → desired thrust vector & yaw
+                        ↓
+            Desired attitude (rotation matrix)
+                        ↓
+            P controller on attitude → cmd angular rate
+                        ↓
+            PID controller on angular rate → moments
+                        ↓
+            Thrust & moment → individual rotor forces
+        """
         # Extract thrust vector components from action
         thrust_vec = concatenate([5 * tanh(action[:2]), [dual_tanh_tvec(action[2])]]) # [Fx, Fy, Fz] (N)
         yaw_sp = 0; self.action[3] = 0   # action[3] * np.pi    # Desired yaw angle (just set to 0 for now)
@@ -565,25 +577,30 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         names = ['xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'Δa_rew']
         
         w_xQ = 1.0
-        w_vQ = 0.25
-        w_ψQ = 0.0
-        w_ωQ = 0.25
-        w_Δa = 0.25
+        w_vQ = 0.25  # 0.1
+        w_ψQ = 0.25  # 0.5
+        w_ωQ = 0.25  # 0.25
+        w_Δa = 0.25  # 0.25
 
         reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
         weights = reward_weights / sum(reward_weights)
 
         scale_xQ = 1.0/0.1
-        scale_vQ = 1.0/0.5
-        scale_ψQ = 1.0/(pi/2)
-        scale_ωQ = 1.0/0.1
-        scale_Δa = 1.0/0.1  # 0.2
+        scale_vQ = 1.0/0.4
+        scale_ψQ = 1.0/(pi/4)
+        scale_ωQ = 1.0/1.0
+        scale_Δa = 1.0/0.1  # 1.0/0.2
 
         exQ = norm(self.data.qpos[0:3] - self.xQd[self.timestep], ord=2)
         evQ = norm(self.data.qvel[0:3] - self.vQd[self.timestep], ord=2)
         eψQ = abs(quat2euler_raw(self.data.qpos[3:7])[2])
         eωQ = norm(self.data.qvel[3:6], ord=2)
-        eΔa = norm(self.action - self.action_last, ord=2)
+        # eΔa = norm(self.action - self.action_last, ord=2)
+        action_seq = list(self.a_buffer) + [self.action]
+        weights = exp(-np.linspace(0, 1, self.history_len))
+        diffs = [norm(action_seq[i] - action_seq[i - 1], ord=2)
+                 for i in range(1, self.history_len + 1)]
+        eΔa = np.sum(weights * diffs) / np.sum(weights)
 
         rewards = exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa])
                       *np.array([exQ, evQ, eψQ, eωQ, eΔa]))

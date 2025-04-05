@@ -44,10 +44,11 @@ class RewardLoggingCallback(BaseCallback):
         super(RewardLoggingCallback, self).__init__(verbose)
 
     def _on_step(self) -> bool:
-        if 'episode' in self.locals:
-            episode_rewards = self.locals['episode']['r']
-            for idx, reward in enumerate(episode_rewards):
-                self.logger.record('reward/reward_{}'.format(idx), reward)
+        infos = self.locals.get("infos", [])
+        for info in infos:
+            if "subreward" in info:
+                for key, value in info["subreward"].items():
+                    self.logger.record(f"subreward/{key}", value)
         return True
 
 class EvalCallbackWithTimestamp(EvalCallback):
