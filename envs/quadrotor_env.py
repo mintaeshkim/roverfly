@@ -81,7 +81,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.is_full_traj      = False
         self.is_rotor_dynamics = False
         self.is_action_filter  = False
-        self.is_record_action  = True
+        self.is_ema_action     = False
+        self.is_record_action  = False
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -89,8 +90,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # region
         self.env_num           = env_num
         self.s_dim             = 18
-        self.a_dim             = 4
-        self.o_dim             = 198
+        self.a_dim             = 4 if self.control_scheme in ["srt", "ctbr"] else 3
+        self.o_dim             = 198 if self.control_scheme in ["srt", "ctbr"] else 192
         self.history_len_short = 5
         self.history_len_long  = 10
         self.history_len       = self.history_len_short
@@ -98,7 +99,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer          = deque(zeros((self.history_len, self.s_dim)), maxlen=self.history_len)  # [x, R, v, ω]
         self.d_buffer          = deque(zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
-        self.action_offset     = zeros(4) if self.control_scheme in ["ctbr", "tvec"] else -0.46 * np.ones(4)
+        self.action_offset     = zeros(self.a_dim) if self.control_scheme in ["ctbr", "tvec"] else -0.46 * np.ones(self.a_dim)
         self.force_offset      = 2.0 * np.ones(4)  # Warm start (for rotor dynamics)
         self.action_last       = self.action_offset
         self.num_episode       = 0
@@ -135,7 +136,6 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         ##################################################
         ################# INITIALIZATION #################
         ##################################################
-        # region
         # region
         self._init_env()
         # endregion
@@ -374,7 +374,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
 
     def step(self, action, restore=False):
         # 1. Simulate for Single Time Step
-        self.action = self.action_filter.filter(action) if self.is_action_filter else action
+        self.raw_action = action
+        self.action = self.action_filter.filter(self.raw_action) if self.is_action_filter else self.raw_action
+        if self.is_ema_action: self.action = 0.2 * self.action + 0.8 * self.action_last
         if self.is_delayed: self.action_queue.append([self.data.time, self.action])
         if self.is_full_traj: self._apply_downwash()
         if self.is_disturbance: self._apply_disturbance()
@@ -466,7 +468,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         """
         # Extract thrust vector components from action
         thrust_vec = concatenate([5 * tanh(action[:2]), [dual_tanh_tvec(action[2])]]) # [Fx, Fy, Fz] (N)
-        yaw_sp = 0; self.action[3] = 0   # action[3] * np.pi    # Desired yaw angle (just set to 0 for now)
+        yaw_sp = 0
 
         # Normalize e3_cmd (desired thrust direction)
         e3 = np.array([0, 0, 1])  # World z-axis
@@ -562,7 +564,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # Past
         self.s_buffer.append(self.s_curr)
         self.d_buffer.append(concatenate([self.xQd[self.timestep] / self.pos_bound, self.vQd[self.timestep] / self.vel_bound]))
-        self.a_buffer.append(self.action)
+        self.a_buffer.append(self.raw_action)
         self.action_last = self.action
         if self.is_record_action and self.timestep < self.max_timesteps: self.action_record[self.timestep] = self.action
         # Present
@@ -595,17 +597,19 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         evQ = norm(self.data.qvel[0:3] - self.vQd[self.timestep], ord=2)
         eψQ = abs(quat2euler_raw(self.data.qpos[3:7])[2])
         eωQ = norm(self.data.qvel[3:6], ord=2)
-        # eΔa = norm(self.action - self.action_last, ord=2)
+        # eΔa = norm(self.action - self.action_last, ord=2)  # NOTE: self.action_last is not raw anymore! use a_buffer
         action_seq = list(self.a_buffer) + [self.action]
-        weights = exp(-np.linspace(0, 1, self.history_len))
+        exp_weights = exp(-np.linspace(0, 1, self.history_len))
         diffs = [norm(action_seq[i] - action_seq[i - 1], ord=2)
                  for i in range(1, self.history_len + 1)]
-        eΔa = np.sum(weights * diffs) / np.sum(weights)
+        eΔa = np.sum(exp_weights * diffs) / np.sum(exp_weights)
 
         rewards = exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa])
                       *np.array([exQ, evQ, eψQ, eωQ, eΔa]))
         reward_dict = dict(zip(names, weights * rewards))
         total_reward = sum(weights * rewards)
+        # tvec_8: scale_Δa, eΔa structure change
+        # mistake: exp_weights was weights
 
         return total_reward, reward_dict
 
