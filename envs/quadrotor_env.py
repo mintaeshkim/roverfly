@@ -77,12 +77,12 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.is_io_history     = True
         self.is_delayed        = True
         self.is_env_randomized = True
-        self.is_disturbance    = True
+        self.is_disturbance    = False
         self.is_full_traj      = False
         self.is_rotor_dynamics = False
         self.is_action_filter  = False
         self.is_ema_action     = False
-        self.is_record_action  = False
+        self.is_record_action  = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -347,9 +347,9 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         vQ_ff = self.vQ - self.vQd[self.timestep : self.timestep + self.future_len]
         ff = concatenate([(xQ_ff @ self.R).flatten(), (vQ_ff @ self.R).flatten()])
 
-        # print(round(self.xQ, 3))
-        # print(round(self.xQd[self.timestep], 3))
-        # print()
+        print(round(self.xQ, 3))
+        print(round(self.xQd[self.timestep], 3))
+        print()
 
         return concatenate([self.obs_curr, io_history, ff])
 
@@ -579,10 +579,10 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         names = ['xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'Δa_rew']
         
         w_xQ = 1.0
-        w_vQ = 0.25  # 0.1
-        w_ψQ = 0.25  # 0.5
-        w_ωQ = 0.25  # 0.25
-        w_Δa = 0.25  # 0.25
+        w_vQ = 0.25
+        w_ψQ = 0.25
+        w_ωQ = 0.25
+        w_Δa = 0.25
 
         reward_weights = np.array([w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
         weights = reward_weights / sum(reward_weights)
@@ -591,7 +591,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         scale_vQ = 1.0/0.4
         scale_ψQ = 1.0/(pi/4)
         scale_ωQ = 1.0/1.0
-        scale_Δa = 1.0/0.1  # 1.0/0.2
+        scale_Δa = 1.0/0.1
 
         exQ = norm(self.data.qpos[0:3] - self.xQd[self.timestep], ord=2)
         evQ = norm(self.data.qvel[0:3] - self.vQd[self.timestep], ord=2)
@@ -600,16 +600,13 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         # eΔa = norm(self.action - self.action_last, ord=2)  # NOTE: self.action_last is not raw anymore! use a_buffer
         action_seq = list(self.a_buffer) + [self.action]
         exp_weights = exp(-np.linspace(0, 1, self.history_len))
-        diffs = [norm(action_seq[i] - action_seq[i - 1], ord=2)
-                 for i in range(1, self.history_len + 1)]
-        eΔa = np.sum(exp_weights * diffs) / np.sum(exp_weights)
+        diffs = [norm(action_seq[i] - action_seq[i - 1], ord=2) for i in range(1, self.history_len + 1)]
+        eΔa = sum(exp_weights * diffs) / sum(exp_weights)
 
         rewards = exp(-np.array([scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa])
                       *np.array([exQ, evQ, eψQ, eωQ, eΔa]))
         reward_dict = dict(zip(names, weights * rewards))
         total_reward = sum(weights * rewards)
-        # tvec_8: scale_Δa, eΔa structure change
-        # mistake: exp_weights was weights
 
         return total_reward, reward_dict
 
@@ -687,7 +684,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
             self.mujoco_renderer.close()
 
     def plot_action(self):
-        fig, axs = plt.subplots(4, 1, figsize=(12, 10))
+        fig, axs = plt.subplots(4, 1, figsize=(12, 10))  # self.a_dim
         timesteps = np.arange(self.max_timesteps)
 
         axs[0].plot(timesteps, self.action_record[:, 0], label='action_0', linestyle='-')
@@ -705,7 +702,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         axs[2].set_ylim([-1, 1])
         axs[2].legend()
 
-        axs[3].plot(timesteps, self.action_record[:, 3], label='action_3', linestyle='-')
+        # if self.control_scheme in ["ctbr", "srt"]: self.action_record[:, 3]
+        axs[3].plot(timesteps, zeros(self.max_timesteps), label='action_3', linestyle='-')
         axs[3].set_title('action_3')
         axs[3].set_ylim([-1, 1])
         axs[3].legend()
