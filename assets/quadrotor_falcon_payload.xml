@@ -55,7 +55,7 @@
     </worldbody>
 
     <tendon>
-        <spatial range="0 1.0" limited="true" rgba="1 1 1 1" width=".005" stiffness="0">
+        <spatial rgba="1 1 1 1" width=".005" stiffness="1e+5">
             <site site="hook_core_site"/>
             <site site="hook_payload_site"/>
         </spatial>

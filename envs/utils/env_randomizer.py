@@ -10,6 +10,8 @@ from rotation_transformations import *
 class EnvRandomizer(object):
     def __init__(self, model: mj.MjModel):
         self.model = model
+        self.has_payload = "payload" in [mj.mj_id2name(model, mj.mjtObj.mjOBJ_BODY, i) for i in range(model.nbody)]
+        
         # Number of bodies and geoms
         self.nbody = self.model.nbody
         self.ngeom = self.model.ngeom
@@ -21,37 +23,62 @@ class EnvRandomizer(object):
         self._default_body_mass = copy(self.model.body_mass)  # mass (nbody x 1)
         self._default_body_inertia = copy(self.model.body_inertia)  # diagonal inertia in ipos/iquat frame (nbody x 3)
         self._default_actuator_gear = copy(self.model.actuator_gear)  # Default actuator properties
-
-        # Default noise scales
-        self._default_ipos_noise_scale = 0.025  # m
-        self._default_iquat_noise_scale = 5  # deg
-        self._default_mass_noise_scale = 0.1
-        self._default_inertia_noise_scale = 0.1
-        self._default_actuator_gear_noise_scale = 0.1
-
+        
         # Noise scales
-        self.reset_noise_scale()
+        self.ipos_noise_scale = 0.025  # m
+        self.iquat_noise_scale = 5  # deg
+        self.mass_noise_scale = 0.1
+        self.inertia_noise_scale = 0.1
+        self.actuator_gear_noise_scale = 0.1
+
+        # Payload and tendon
+        if self.has_payload:
+            # Payload ID
+            self.payload_body_id = self.model.body(name="payload").id
+            self.payload_site_id = self.model.site(name="hook_payload_site").id
+            self.core_site_id = self.model.site(name="hook_core_site").id
+            
+            # Payload and tendon scales
+            self.payload_mass_scale = 2.0  # [0.0, 2.0]
+            self.tendon_length_scale = 1.0  # [0.0, 1.0] m
+
+            # Default payload and tendon properties
+            self._default_payload_pos = copy(self.model.body_ipos[self.payload_body_id])
+            self._default_hook_payload_site = copy(model.site_pos[self.payload_site_id])
+            self._default_payload_mass = copy(self.model.body_mass[self.payload_body_id])
+            self._default_tendon_max_length = copy(self.model.tendon_range[0][1])
 
     def randomize_env(self, model):
         model = self.reset_env(model=model)
         
         for i in range(self.nbody):
-            model.body_ipos[i] = self._default_body_ipos[i] + uniform(size=3, low=-self.ipos_noise_scale, high=self.ipos_noise_scale)
-            body_iquat = random_deviation_quaternion(self._default_body_iquat[i], self.iquat_noise_scale)
-            model.body_iquat[i] = body_iquat / norm(body_iquat)  # normalize quaternion
-            model.body_mass[i] = self._default_body_mass[i] * (1.0 + uniform(low=-self.mass_noise_scale, high=self.mass_noise_scale))
-            model.body_inertia[i] = self._default_body_inertia[i] * (1.0 + uniform(size=3, low=-self.inertia_noise_scale, high=self.inertia_noise_scale))
+            if self.has_payload and not i == self.payload_body_id:
+                model.body_ipos[i] = self._default_body_ipos[i] + uniform(size=3, low=-self.ipos_noise_scale, high=self.ipos_noise_scale)
+                body_iquat = random_deviation_quaternion(self._default_body_iquat[i], self.iquat_noise_scale)
+                model.body_iquat[i] = body_iquat / norm(body_iquat)  # normalize quaternion
+                model.body_mass[i] = self._default_body_mass[i] * (1.0 + uniform(low=-self.mass_noise_scale, high=self.mass_noise_scale))
+                model.body_inertia[i] = self._default_body_inertia[i] * (1.0 + uniform(size=3, low=-self.inertia_noise_scale, high=self.inertia_noise_scale))
         
         for gear in model.actuator_gear:
             gear *= 1.0 + uniform(low=-self.actuator_gear_noise_scale, high=self.actuator_gear_noise_scale, size=len(gear))
         
+        if self.has_payload:
+            tendon_length = uniform(0, self.tendon_length_scale)
+            model.body_ipos[self.payload_body_id] = self._default_body_ipos[self.payload_body_id] + np.array([0, 0, 1 - tendon_length])
+            model.site_pos[self.payload_site_id] = model.site_pos[self.core_site_id] + np.array([0, 0, -tendon_length])
+            model.body_mass[self.payload_body_id] = self._default_body_mass[self.payload_body_id] * uniform(low=0, high=self.payload_mass_scale)
+    
         # print("body_ipos: \n", model.body_ipos)
         # print("body_iquat: \n", model.body_iquat)
         # print("body_mass: \n", model.body_mass)
         # print("body_inertia: \n", model.body_inertia)
-        # R = quat2rot(model.body_iquat)
-        # print("full_inertia: \n", R @ np.diag(model.body_inertia) @ R.T)
         # print("actuator_gear: \n", model.actuator_gear)
+        # if self.has_payload:
+        #     print("payload_pos: \n", model.body_ipos[self.payload_body_id])
+        #     print("payload_mass: \n", model.body_mass[self.payload_body_id])
+        #     print("tendon_range: \n", model.tendon_range[0])
+        #     print("tendon_length \n", mj.MjData(model).ten_length[0])
+        # print()
         
         return model
 
@@ -62,27 +89,6 @@ class EnvRandomizer(object):
         model.body_inertia = self._default_body_inertia
         model.actuator_gear = self._default_actuator_gear
         return model
-
-    def set_noise_scale(self, progress):
-        self.reset_noise_scale()
-        self.ipos_noise_scale = self._default_ipos_noise_scale * progress  # [0, 0.005]
-        self.iquat_noise_scale = self._default_iquat_noise_scale * progress  # [0, 5]
-        self.mass_noise_scale = self._default_mass_noise_scale * progress  # [0, 0.1]
-        self.inertia_noise_scale = self._default_inertia_noise_scale * progress  # [0, 0.1]
-        self.actuator_gear_noise_scale = self._default_actuator_gear_noise_scale * progress  # [0, 0.1]
-        
-        # print(f"ipos_noise_scale: {self.ipos_noise_scale}")
-        # print(f"iquat_noise_scale: {self.iquat_noise_scale}")
-        # print(f"mass_noise_scale: {self.mass_noise_scale}")
-        # print(f"inertia_noise_scale: {self.inertia_noise_scale}")
-        # print(f"actuator_gear_noise_scale: {self.actuator_gear_noise_scale}")
-
-    def reset_noise_scale(self):
-        self.ipos_noise_scale = self._default_ipos_noise_scale  # m
-        self.iquat_noise_scale = self._default_iquat_noise_scale  # deg
-        self.mass_noise_scale = self._default_mass_noise_scale
-        self.inertia_noise_scale = self._default_inertia_noise_scale
-        self.actuator_gear_noise_scale = self._default_actuator_gear_noise_scale
 
 def random_deviation_quaternion(original_quaternion, max_angle_degrees):
     random_axis = randn(3)
@@ -108,6 +114,10 @@ if __name__ == "__main__":
     model = mj.MjModel.from_xml_path(xml_file)
     env_randomizer = EnvRandomizer(model=model)
     for _ in range(5):
-        env_randomizer.set_noise_scale(progress=0.2)
         env_randomizer.randomize_env(model=model)
-        print()
+    
+    xml_file = "../../assets/quadrotor_falcon.xml"
+    model = mj.MjModel.from_xml_path(xml_file)
+    env_randomizer = EnvRandomizer(model=model)
+    for _ in range(5):
+        env_randomizer.randomize_env(model=model)
