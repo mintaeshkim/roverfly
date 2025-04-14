@@ -83,7 +83,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_rotor_dynamics = False
         self.is_action_filter  = False
         self.is_ema_action     = False
-        self.is_record_action  = True
+        self.is_record_action  = False
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -310,8 +310,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.vQd = zeros((self.max_timesteps + self.history_len, 3), dtype=np.float32)
         for i in range(self.max_timesteps + self.history_len):
             self.xPd[i], self.vPd[i], self.aPd[i], self.daPd[i], self.qd[i], self.dqd[i], self.d2qd[i] = self.traj.get(i * self.policy_dt)
-            self.xQd[i] = self.xPd[i] - self.qd[i]
-            self.vQd[i] = self.vPd[i] - self.dqd[i]
+            self.xQd[i] = self.xPd[i] - self.qd[i] * self.cable_length
+            self.vQd[i] = self.vPd[i] - self.dqd[i] * self.cable_length
         self.x_offset = self.pos_bound * np.array([uniform(-1, 1), uniform(-1, 1), 0 if self.is_full_traj else 2 * uniform(0.5, 1)])
         self.xPd += self.x_offset
         self.xQd += self.x_offset
@@ -392,9 +392,6 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.vQ = self.data.qvel[0:3] + clip(normal(loc=0, scale=0.02, size=3), -0.005, 0.005)
         self.ωQ = self.data.qvel[3:6] + clip(normal(loc=0, scale=pi/30, size=3), -pi/60, pi/60)
         self.vP = self.data.qvel[6:9] + clip(normal(loc=0, scale=0.02, size=3), -0.005, 0.005)
-
-        print(f"mp: {round(self.mP, 3)}")
-        print(f"cl: {round(self.cable_length, 3)}")
 
         return concatenate([self.xQ / self.pos_bound, self.RQ.flatten(), self.xP / self.pos_bound,
                             self.vQ / self.vel_bound, self.ωQ, self.vP / self.vel_bound, [self.mP, self.cable_length]])  # 26
@@ -590,7 +587,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer.append(self.s_curr)
         self.d_buffer.append(concatenate([self.xQd[self.timestep] / self.pos_bound, self.xPd[self.timestep] / self.pos_bound,
                                           self.vQd[self.timestep] / self.vel_bound, self.vPd[self.timestep] / self.vel_bound]))
-        self.a_buffer.append(self.action)
+        self.a_buffer.append(self.raw_action)
         self.action_last = self.action
         if self.is_record_action and self.timestep < self.max_timesteps: self.action_record[self.timestep] = self.action
         # Present
@@ -607,11 +604,11 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         
         w_xP = 1.0
         w_vP = 0.25
-        w_xQ = 0.8
-        w_vQ = 0.2
-        w_ψQ = 0.25
-        w_ωQ = 0.25
-        w_Δa = 0.25
+        w_xQ = 0.5
+        w_vQ = 0.125
+        w_ψQ = 0.5  # 0.25
+        w_ωQ = 0.5  # 0.25
+        w_Δa = 0.5  # 0.25
 
         reward_weights = np.array([w_xP, w_vP, w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
         weights = reward_weights / sum(reward_weights)
@@ -653,7 +650,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         exP = norm(xP - xPd)
         evP = norm(vP - vPd)
 
-        if 5.0 <= self.time_in_sec <= 35.0 and xQ[2] < 0.01:  # Crash except for takeoff and landing
+        if 5.0 <= self.time_in_sec <= 35.0 and xQ[2] < 0:  # Crash except for takeoff and landing
             self.num_episode += 1
             print("Env {env_num} | Ep {epi} | Crashed | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
