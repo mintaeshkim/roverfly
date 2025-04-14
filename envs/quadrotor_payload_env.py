@@ -5,7 +5,7 @@ parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.append(os.path.join(parent_dir))
 sys.path.append(os.path.join(parent_dir, 'envs'))
 import numpy as np
-from numpy import abs, asarray, clip, concatenate, copy, exp, mean, ones, pi, round, sum, sqrt, tanh, zeros
+from numpy import abs, asarray, clip, concatenate, copy, dot, exp, mean, ones, pi, round, sum, sqrt, tanh, zeros
 from numpy.random import choice, uniform, normal
 from numpy.linalg import inv, norm
 from typing import Dict, Union
@@ -22,6 +22,8 @@ from envs.utils.env_randomizer import EnvRandomizer
 from envs.utils.utility_functions import *
 from envs.utils.rotation_transformations import *
 from envs.utils.render_util import *
+from envs.utils.mj_utils import *
+from envs.utils.action_filter import ContinuousActionFilter
 import time
 import matplotlib.pyplot as plt
 
@@ -47,7 +49,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.payload_body_id = self.model.body(name="payload").id
         self.env_randomizer = EnvRandomizer(model=self.model)
         self.frame_skip = frame_skip
-        self.control_scheme = "ctbr"  # "srt"
+        self.control_scheme = "tvec"  # ["srt", "tvec", "ctbr"]
         np.random.seed(env_num)
         
         ##################################################
@@ -55,7 +57,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         ##################################################
         # region
         self.policy_freq: float    = 100.0
-        self.sim_freq: float       = 500.0 if self.control_scheme == "ctbr" else self.policy_freq
+        self.sim_freq: float       = 500.0 if self.control_scheme in ["ctbr", "tvec"] else self.policy_freq
         self.policy_dt: float      = 1 / self.policy_freq
         self.sim_dt: float         = 1 / self.sim_freq
         self.num_sims_per_env_step = int(self.sim_freq // self.policy_freq)
@@ -67,7 +69,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.max_timesteps: int  = max_timesteps
         self.timestep: int       = 0
         self.time_in_sec: float  = 0.0
-        self.traj_timesteps: int = 3000
+        self.track_timesteps: int = 3000
         # endregion
         ##################################################
         #################### BOOLEANS ####################
@@ -75,9 +77,13 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # region
         self.is_io_history     = True
         self.is_delayed        = True
-        self.is_env_randomized = False
+        self.is_env_randomized = True
         self.is_disturbance    = False
         self.is_full_traj      = False
+        self.is_rotor_dynamics = False
+        self.is_action_filter  = False
+        self.is_ema_action     = False
+        self.is_record_action  = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -85,8 +91,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # region
         self.env_num           = env_num
         self.s_dim             = 24
-        self.a_dim             = 4
-        self.o_dim             = 300
+        self.a_dim             = 4 if self.control_scheme in ["srt", "ctbr"] else 3
+        self.o_dim             = 312 if self.control_scheme in ["srt", "ctbr"] else 306
         self.history_len_short = 5
         self.history_len_long  = 10
         self.history_len       = self.history_len_short
@@ -94,8 +100,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer          = deque(zeros((self.history_len, self.s_dim)), maxlen=self.history_len)
         self.d_buffer          = deque(zeros((self.history_len, 12)), maxlen=self.history_len)
         self.a_buffer          = deque(zeros((self.history_len, 4)), maxlen=self.history_len)
-        self.action_offset     = zeros(4) if self.control_scheme == "ctbr" else -0.4 * ones(4)
-        self.force_offset      = 2.3 * np.ones(4)  # Warm start
+        self.action_offset     = zeros(self.a_dim) if self.control_scheme in ["ctbr", "tvec"] else -0.4 * ones(4)
+        self.force_offset      = 2.3 * ones(4)  # Warm start
         self.action_last       = self.action_offset
         self.num_episode       = 0
         self.action_space      = self._set_action_space()
@@ -107,8 +113,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # region
         self.pos_bound = 3.0
         self.vel_bound = 5.0
-        self.pos_err_bound = 1.0
-        self.vel_err_bound = 4.0
+        self.pos_err_bound = 0.5
+        self.vel_err_bound = 2.0
         # endregion
         ##################################################
         ################### MUJOCOENV ####################
@@ -152,6 +158,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                                [self.d, -self.d, -self.d, self.d],
                                [-self.d, -self.d, self.d, self.d],
                                [-self.κ, self.κ, -self.κ, self.κ]]))
+        self.cable_length = 1.0
         
         # PID Control
         self.kPdφ, self.kPdθ, self.kPdψ = 1.0, 1.0, 0.8
@@ -160,6 +167,15 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.clipI = 0.15
         self.edφI, self.edθI, self.edψI = 0, 0, 0
         self.edφP_prev, self.edθP_prev, self.edψP_prev = 0, 0, 0
+
+        # Additional PPID gains for thrust vector control (tvec)
+        self.kp_att = np.array([8.0, 8.0, 3.0])  # Attitude position gains
+        self.kp_rate = np.array([0.15, 0.15, 0.05])  # Rate proportional gains  
+        self.ki_rate = np.array([0.0, 0.0, 0.0])  # Rate integral gains
+        self.kd_rate = np.array([0.0001, 0.0001, 0.0])  # Rate derivative gains
+        self.rate_integral = np.zeros(3)  # Rate error integral
+        self.max_rate_integral = 0.15  # Anti-windup limit for rates
+        self.moment_limit = [[-2,-2,-1],[2,2,1]]
 
         # Rotor Dynamics
         self.tau_up = 0.2164
@@ -178,7 +194,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # endregion
 
         # Disturbance Parameters
-        self.disturbance_duration_range = [0, 0.5]  # Impulse
+        self.disturbance_duration_range = [0, 0.25]  # Impulse
         self.force_disturbance_range = [-0.25, 0.25]  # N
         self.torque_disturbance_range = [-0.0025, 0.0025]  # N
         self.disturbance_duration = 0
@@ -223,16 +239,25 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer.extend([s_curr] * self.history_len)
         self.d_buffer.extend([d_curr] * self.history_len)
         self.a_buffer.extend([a_curr] * self.history_len)
+        if self.is_record_action: self.action_record = zeros((self.max_timesteps, self.a_dim))
 
     def reset(self, seed=None, randomize=None):
         # super().reset(seed=self.env_num)        
+        if self.is_env_randomized: self.model, self.mP, self.cable_length = self.env_randomizer.randomize_env(self.model)
         self._reset_env()
         self._reset_model()
         self._reset_error()
         self._init_history_ff()
-        obs = self._get_obs()
         self.info = self._get_reset_info()
-        if self.is_env_randomized: self.model = self.env_randomizer.randomize_env(self.model)
+        if self.is_action_filter:
+            self.action_filter = ContinuousActionFilter(
+                history_len=self.history_len,
+                a_dim=self.a_dim,
+                lipschitz_const = 10.0,
+                a_buffer=self.a_buffer,
+                dt=self.policy_dt
+            )
+        obs = self._get_obs()
         return obs, self.info
     
     def _reset_env(self):
@@ -244,19 +269,19 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.info         = {}
 
     def _reset_model(self):
-        if not self.is_full_traj: self.max_timesteps = self.traj_timesteps
+        if not self.is_full_traj: self.max_timesteps = self.track_timesteps
 
         self.traj = ut.CrazyTrajectoryPayload(
             tf=self.max_timesteps*self.policy_dt,
-            ax=choice([-1,1])*2,
-            ay=choice([-1,1])*2,
-            az=choice([-1,1])*1,
+            ax=choice([-1,1])*2.0,
+            ay=choice([-1,1])*2.0,
+            az=choice([-1,1])*1.0,
             f1=choice([-1,1])*0.2,
             f2=choice([-1,1])*0.2,
             f3=choice([-1,1])*0.1
         )
         
-        if self.is_full_traj: self.traj = ut.FullCrazyTrajectoryPayload(tf=45, traj=self.traj)
+        if self.is_full_traj: self.traj = ut.FullCrazyTrajectoryPayload(tf=40, traj=self.traj)
 
         # self.traj.plot()
         # self.traj.plot3d_payload()
@@ -299,9 +324,13 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         wv = 0.1 * uniform(size=3, low=-1, high=1)
         wω = (pi/12) * uniform(size=3, low=-1, high=1)
 
-        dPQ = 1.0 - 0.01 * uniform(0, 1)
+        if self.is_full_traj:
+            wx[-1], wv[-1] = 0, 0
+            watt, wω = zeros(3), zeros(3)
+
+        dPQ = self.cable_length - 0.01 * uniform(0, 1)
         psi = uniform(0, 2*pi)
-        phi = (pi/6) * uniform(0, 1)  # pi/4
+        phi = (pi/6) * uniform(0, 1)
         
         xP = self.xPd[0] + wx
         xQ = xP + dPQ * np.array([cos(psi)*sin(phi), sin(psi)*sin(phi), cos(phi)])
@@ -321,7 +350,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.edφP_prev, self.edθP_prev, self.edψP_prev = 0, 0, 0
 
     def _get_obs(self):
-        self.obs_curr = self._get_obs_curr()  # 40
+        self.obs_curr = self._get_obs_curr()  # 42
 
         s_buffer = asarray(self.s_buffer, dtype=np.float32).flatten()  # 120
         d_buffer = asarray(self.d_buffer, dtype=np.float32).flatten()  # 60
@@ -339,10 +368,10 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                           (xQ_ff @ self.RQ).flatten(),
                           (vQ_ff @ self.RQ).flatten()])  # 60
 
-        return concatenate([self.obs_curr, io_history, ff])  # 300
+        return concatenate([self.obs_curr, io_history, ff])  # 302
 
     def _get_obs_curr(self):
-        self.s_curr = self._get_state_curr()  # 24
+        self.s_curr = self._get_state_curr()  # 26
         
         self.exP = self.xP - self.xPd[self.timestep]
         self.evP = self.vP - self.vPd[self.timestep]
@@ -350,7 +379,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.evQ = self.vQ - self.vQd[self.timestep]
         self.e_curr = concatenate([self.RQ.T @ self.exP, self.RQ.T @ self.evP, self.RQ.T @ self.exQ, self.RQ.T @ self.evQ])
 
-        obs_curr = concatenate([self.s_curr, self.e_curr, self.action])  # 40
+        obs_curr = concatenate([self.s_curr, self.e_curr, self.action])  # 42
 
         return obs_curr
 
@@ -364,12 +393,17 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.ωQ = self.data.qvel[3:6] + clip(normal(loc=0, scale=pi/30, size=3), -pi/60, pi/60)
         self.vP = self.data.qvel[6:9] + clip(normal(loc=0, scale=0.02, size=3), -0.005, 0.005)
 
+        print(f"mp: {round(self.mP, 3)}")
+        print(f"cl: {round(self.cable_length, 3)}")
+
         return concatenate([self.xQ / self.pos_bound, self.RQ.flatten(), self.xP / self.pos_bound,
-                            self.vQ / self.vel_bound, self.ωQ, self.vP / self.vel_bound])  # 24
+                            self.vQ / self.vel_bound, self.ωQ, self.vP / self.vel_bound, [self.mP, self.cable_length]])  # 26
    
     def step(self, action, restore=False):
         # 1. Simulate for Single Time Step
-        self.action = action
+        self.raw_action = action
+        self.action = self.action_filter.filter(self.raw_action) if self.is_action_filter else self.raw_action
+        if self.is_ema_action: self.action = 0.2 * self.action + 0.8 * self.action_last
         if self.is_delayed: self.action_queue.append([self.data.time, self.action])
         if self.is_full_traj: self._apply_downwash()
         if self.is_disturbance: self._apply_disturbance()
@@ -386,6 +420,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         terminated = self._terminated()
         truncated = self._truncated()
         self.info["terminated"] = terminated
+        self.info["subreward"] = reward_dict
         # 5. Update Data
         self._update_data(reward=reward, step=True)
 
@@ -400,12 +435,16 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         return action_delayed
 
     def do_simulation(self, ctrl, n_frames):
-        if self.control_scheme == "ctbr": ctrl = self._ctbr2srt(ctrl)  # CTBR
-        else: ctrl = self.rotor_max_thrust * (ctrl + 1) / 2  # SRT
+        if self.control_scheme == "ctbr":
+            ctrl = self._ctbr2srt(ctrl)
+        elif self.control_scheme == "srt":
+            ctrl = self.rotor_max_thrust * (ctrl + 1) / 2
+        else: # tvec
+            ctrl = self._tvec2srt(ctrl)
         self._step_mujoco_simulation(ctrl, n_frames)
 
     def _step_mujoco_simulation(self, ctrl, n_frames):
-        self._rotor_dynamics(ctrl)
+        self.actual_forces = self._rotor_dynamics(ctrl) if self.is_rotor_dynamics else ctrl
         self._apply_control(ctrl=self.actual_forces)
         mj.mj_step(self.model, self.data, nstep=n_frames)
 
@@ -440,6 +479,70 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             self.disturbance_wrench = concatenate([force, torque])
             self.disturbance_start = self.data.time
         self.data.xfrc_applied[self.quadrotor_body_id][0:6] = self.disturbance_wrench
+
+    def _tvec2srt(self, action):
+        """Convert thrust vector command to single rotor thrusts using PPID control
+           Control framework:
+            High-level action → desired thrust vector & yaw
+                        ↓
+            Desired attitude (rotation matrix)
+                        ↓
+            P controller on attitude → cmd angular rate
+                        ↓
+            PID controller on angular rate → moments
+                        ↓
+            Thrust & moment → individual rotor forces
+        """
+        # Extract thrust vector components from action
+        thrust_vec = concatenate([5 * tanh(action[:2]), [dual_tanh_tvec(action[2])]]) # [Fx, Fy, Fz] (N)
+        yaw_sp = 0
+
+        # Normalize e3_cmd (desired thrust direction)
+        e3 = np.array([0, 0, 1])  # World z-axis
+        e3_cmd = thrust_vec
+        if np.isnan(norm(e3_cmd)) or norm(e3_cmd) < 1e-4: e3_cmd = e3
+        e3_cmd = e3_cmd / norm(e3_cmd)
+
+        # Compute desired rotation matrix
+        e1_des = np.array([cos(yaw_sp), sin(yaw_sp), 0.0])
+        e1_cmd = e1_des - dot(e1_des, e3_cmd) * e3_cmd
+        e1_cmd = e1_cmd / norm(e1_cmd)
+        e2_cmd = np.cross(e3_cmd, e1_cmd)
+        R_des = np.column_stack((e1_cmd, e2_cmd, e3_cmd))
+        
+        # Convert to euler angles
+        euler_des = rot2euler(R_des)
+        euler_curr = quat2euler_raw(self.data.qpos[3:7])
+        omega_curr = self.data.qvel[3:6]
+        
+        # Attitude position control (P only)
+        e_att = euler_des - euler_curr
+        
+        # Compute desired angular rates (P from attitude)
+        cmd_omega = self.kp_att * e_att
+        
+        # Rate control (PID)
+        e_rate = cmd_omega - omega_curr
+        self.rate_integral = clip(self.rate_integral + e_rate * self.sim_dt, -self.max_rate_integral, self.max_rate_integral)
+        rate_deriv = (e_rate - np.array([self.edφP_prev, self.edθP_prev, self.edψP_prev])) / self.sim_dt
+
+        # Update previous errors for D term
+        self.edφP_prev = e_rate[0]
+        self.edθP_prev = e_rate[1]
+        self.edψP_prev = e_rate[2]
+
+        # Compute final moments using PPID structure
+        M = (self.kp_rate * e_rate +  # P term on rates
+             self.ki_rate * self.rate_integral +  # I term on rates
+             self.kd_rate * rate_deriv)  # D term on rates
+        M = clip(M,self.moment_limit[0], self.moment_limit[1])
+
+        # Convert thrust and moments to rotor forces
+        T = norm(thrust_vec)
+        f = self.A @ np.array([T, M[0], M[1], M[2]])
+        f = clip(f, 0, self.rotor_max_thrust)
+
+        return f
 
     def _ctbr2srt(self, action):
         zcmd = dual_tanh_payload(action[0])
@@ -489,6 +592,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                                           self.vQd[self.timestep] / self.vel_bound, self.vPd[self.timestep] / self.vel_bound]))
         self.a_buffer.append(self.action)
         self.action_last = self.action
+        if self.is_record_action and self.timestep < self.max_timesteps: self.action_record[self.timestep] = self.action
         # Present
         self.time_in_sec = round(self.time_in_sec + self.policy_dt, 2)
         self.timestep += 1
@@ -502,23 +606,23 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         names = ['xP_rew', 'vP_rew', 'xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'Δa_rew']
         
         w_xP = 1.0
-        w_vP = 0.5
+        w_vP = 0.25
         w_xQ = 0.8
-        w_vQ = 0.4
-        w_ψQ = 1.0
-        w_ωQ = 0.4
-        w_Δa = 0.1
+        w_vQ = 0.2
+        w_ψQ = 0.25
+        w_ωQ = 0.25
+        w_Δa = 0.25
 
         reward_weights = np.array([w_xP, w_vP, w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
         weights = reward_weights / sum(reward_weights)
 
-        scale_xP = 1.0/0.25
-        scale_vP = 1.0/1.0
-        scale_xQ = 1.0/0.25
-        scale_vQ = 1.0/1.0
+        scale_xP = 1.0/0.1
+        scale_vP = 1.0/0.4
+        scale_xQ = 1.0/0.1
+        scale_vQ = 1.0/0.4
         scale_ψQ = 1.0/(pi/4)
         scale_ωQ = 1.0/0.25
-        scale_Δa = 1.0/0.5
+        scale_Δa = 1.0/0.1
         
         exP = norm(self.data.qpos[7:10] - self.xPd[self.timestep], ord=2)
         evP = norm(self.data.qvel[6:9] - self.vPd[self.timestep], ord=2)
@@ -526,7 +630,10 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         evQ = norm(self.data.qvel[0:3] - self.vQd[self.timestep], ord=2)
         eψQ = abs(quat2euler_raw(self.data.qpos[3:7])[2])
         eωQ = norm(self.data.qvel[3:6], ord=2)
-        eΔa = norm(self.action - self.action_last, ord=2)
+        action_seq = list(self.a_buffer) + [self.action]
+        exp_weights = exp(-np.linspace(0, 1, self.history_len))
+        diffs = [norm(action_seq[i] - action_seq[i - 1], ord=2) for i in range(1, self.history_len + 1)]
+        eΔa = sum(exp_weights * diffs) / sum(exp_weights)
 
         rewards = exp(-np.array([scale_xP, scale_vP, scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa])
                       *np.array([exP, evP, exQ, evQ, eψQ, eωQ, eΔa]))
@@ -546,7 +653,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         exP = norm(xP - xPd)
         evP = norm(vP - vPd)
 
-        if 5.0 <= self.time_in_sec <= 40.0 and xQ[2] < 0.01:  # Crash except for takeoff and landing
+        if 5.0 <= self.time_in_sec <= 35.0 and xQ[2] < 0.01:  # Crash except for takeoff and landing
             self.num_episode += 1
             print("Env {env_num} | Ep {epi} | Crashed | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
@@ -554,7 +661,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
             return True
-        if 5.0 <= self.time_in_sec <= 40.0 and exP > self.pos_err_bound:
+        if exP > self.pos_err_bound:
             self.num_episode += 1
             print("Env {env_num} | Ep {epi} | Pos error: {pos_err} | Time: {time} | Reward: {rew}".format(
                   env_num=self.env_num,
@@ -592,6 +699,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                   time=round(self.time_in_sec, 2),
                   pos_err=round(exP, 2),
                   rew=round(self.total_reward, 1)))
+            if self.is_record_action: self.plot_action()
             return True
         else:
             return False
@@ -641,6 +749,33 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         if self.mujoco_renderer is not None:
             self.mujoco_renderer.close()
 
+    def plot_action(self):
+        fig, axs = plt.subplots(self.a_dim, 1, figsize=(12, 10))
+        timesteps = np.arange(self.max_timesteps)
+
+        axs[0].plot(timesteps, self.action_record[:, 0], label='action_0', linestyle='-')
+        axs[0].set_title('action_0')
+        axs[0].set_ylim([-1, 1])
+        axs[0].legend()
+
+        axs[1].plot(timesteps, self.action_record[:, 1], label='action_1', linestyle='-')
+        axs[1].set_title('action_1')
+        axs[1].set_ylim([-1, 1])
+        axs[1].legend()
+
+        axs[2].plot(timesteps, self.action_record[:, 2], label='action_2', linestyle='-')
+        axs[2].set_title('action_2')
+        axs[2].set_ylim([-1, 1])
+        axs[2].legend()
+
+        if self.control_scheme in ["ctbr", "srt"]:
+            axs[3].plot(timesteps, self.action_record[:, 3], label='action_3', linestyle='-')
+            axs[3].set_title('action_3')
+            axs[3].set_ylim([-1, 1])
+            axs[3].legend()
+
+        plt.tight_layout()
+        plt.show()
 
 class TestRecord:
     def __init__(self, max_timesteps, record_object, num_sims_per_env_step):

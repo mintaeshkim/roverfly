@@ -2,7 +2,7 @@ import mujoco as mj
 import numpy as np
 from numpy.random import uniform, randn
 from numpy.linalg import norm
-from numpy import cos, sin
+from numpy import cos, sin, zeros
 from copy import copy
 from rotation_transformations import *
 
@@ -37,16 +37,17 @@ class EnvRandomizer(object):
             self.payload_body_id = self.model.body(name="payload").id
             self.payload_site_id = self.model.site(name="hook_payload_site").id
             self.core_site_id = self.model.site(name="hook_core_site").id
-            
+
+            # Default payload and tendon properties
+            self._default_payload_pos = zeros(3)
+            self._default_hook_core_site_pos = np.array([0, 0, 1])
+            self._default_hook_payload_site_pos = zeros(3)
+            self._default_payload_mass = 0.1
+            self._default_tendon_max_length = 1.0
+
             # Payload and tendon scales
             self.payload_mass_scale = 2.0  # [0.0, 2.0]
             self.tendon_length_scale = 1.0  # [0.0, 1.0] m
-
-            # Default payload and tendon properties
-            self._default_payload_pos = copy(self.model.body_ipos[self.payload_body_id])
-            self._default_hook_payload_site = copy(model.site_pos[self.payload_site_id])
-            self._default_payload_mass = copy(self.model.body_mass[self.payload_body_id])
-            self._default_tendon_max_length = copy(self.model.tendon_range[0][1])
 
     def randomize_env(self, model):
         model = self.reset_env(model=model)
@@ -63,10 +64,11 @@ class EnvRandomizer(object):
             gear *= 1.0 + uniform(low=-self.actuator_gear_noise_scale, high=self.actuator_gear_noise_scale, size=len(gear))
         
         if self.has_payload:
-            tendon_length = uniform(0, self.tendon_length_scale)
-            model.body_ipos[self.payload_body_id] = self._default_body_ipos[self.payload_body_id] + np.array([0, 0, 1 - tendon_length])
-            model.site_pos[self.payload_site_id] = model.site_pos[self.core_site_id] + np.array([0, 0, -tendon_length])
-            model.body_mass[self.payload_body_id] = self._default_body_mass[self.payload_body_id] * uniform(low=0, high=self.payload_mass_scale)
+            payload_mass = self._default_body_mass[self.payload_body_id] * uniform(low=0, high=self.payload_mass_scale)
+            tendon_length = uniform(0.025, self.tendon_length_scale)
+            model.body_ipos[self.payload_body_id] = self._default_hook_core_site_pos + np.array([0, 0, -tendon_length])
+            model.body_mass[self.payload_body_id] = payload_mass
+            model.tendon_range[0][1] = tendon_length
     
         # print("body_ipos: \n", model.body_ipos)
         # print("body_iquat: \n", model.body_iquat)
@@ -74,13 +76,14 @@ class EnvRandomizer(object):
         # print("body_inertia: \n", model.body_inertia)
         # print("actuator_gear: \n", model.actuator_gear)
         # if self.has_payload:
+        #     print("hook_core_site_pos: \n", self._default_hook_core_site_pos)
+        #     print("hook_payload_site_pos: \n", self._default_hook_payload_site_pos)
         #     print("payload_pos: \n", model.body_ipos[self.payload_body_id])
         #     print("payload_mass: \n", model.body_mass[self.payload_body_id])
         #     print("tendon_range: \n", model.tendon_range[0])
-        #     print("tendon_length \n", mj.MjData(model).ten_length[0])
         # print()
         
-        return model
+        return model, payload_mass, tendon_length
 
     def reset_env(self, model):
         model.body_ipos = self._default_body_ipos
@@ -88,6 +91,12 @@ class EnvRandomizer(object):
         model.body_mass = self._default_body_mass
         model.body_inertia = self._default_body_inertia
         model.actuator_gear = self._default_actuator_gear
+        if self.has_payload:
+            model.body_ipos[self.payload_body_id] = self._default_payload_pos
+            model.site_pos[self.payload_site_id] = self._default_hook_payload_site_pos
+            model.body_mass[self.payload_body_id] = self._default_payload_mass
+            model.tendon_range[0][1] = self._default_tendon_max_length
+
         return model
 
 def random_deviation_quaternion(original_quaternion, max_angle_degrees):

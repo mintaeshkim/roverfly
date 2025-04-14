@@ -5,7 +5,7 @@ parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.append(os.path.join(parent_dir))
 sys.path.append(os.path.join(parent_dir, 'envs'))
 import numpy as np
-from numpy import abs, asarray, clip, concatenate, copy, dot, exp, mean, pi, round, sum, sqrt, tanh, zeros
+from numpy import abs, asarray, clip, concatenate, copy, dot, exp, mean, ones, pi, round, sum, sqrt, tanh, zeros
 from numpy.random import choice, uniform, normal
 from numpy.linalg import inv, norm
 from typing import Dict, Union
@@ -99,8 +99,8 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         self.s_buffer          = deque(zeros((self.history_len, self.s_dim)), maxlen=self.history_len)  # [x, R, v, ω]
         self.d_buffer          = deque(zeros((self.history_len, 6)), maxlen=self.history_len)  # [xQd, vQd]
         self.a_buffer          = deque(zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
-        self.action_offset     = zeros(self.a_dim) if self.control_scheme in ["ctbr", "tvec"] else -0.46 * np.ones(self.a_dim)
-        self.force_offset      = 2.0 * np.ones(4)  # Warm start (for rotor dynamics)
+        self.action_offset     = zeros(self.a_dim) if self.control_scheme in ["ctbr", "tvec"] else -0.46 * ones(self.a_dim)
+        self.force_offset      = 2.0 * ones(4)  # Warm start (for rotor dynamics)
         self.action_last       = self.action_offset
         self.num_episode       = 0
         self.action_space      = self._set_action_space()
