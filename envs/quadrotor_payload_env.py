@@ -643,7 +643,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         r_ωQ = w_ωQ * exp(-scale_ωQ * eωQ)
         r_Δa = w_Δa * exp(-scale_Δa * eΔa)
         r_dq = w_dq * exp(-scale_dq * edq)
-        rewards = np.array([r_xP, r_ψQ, r_ωQ, r_Δa])
+        names = ['xP_rew','ψQ_rew', 'ωQ_rew', 'Δa_rew', 'dq_rew']
+        rewards = np.array([r_xP, r_ψQ, r_ωQ, r_Δa, r_dq])
         reward_dict = dict(zip(names, rewards))
         total_reward = r_xP * (1 + r_ψQ + r_ωQ + r_dq) + r_Δa
 
