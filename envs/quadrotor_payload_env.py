@@ -603,14 +603,15 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         names = ['xP_rew', 'vP_rew', 'xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'Δa_rew']
         
         w_xP = 1.0
-        w_vP = 0.25
-        w_xQ = 0.5
-        w_vQ = 0.125
-        w_ψQ = 0.5  # 0.25
-        w_ωQ = 0.5  # 0.25
-        w_Δa = 0.5  # 0.25
+        w_vP = 0.0  # 0.25
+        w_xQ = 0.0  # 0.1  # 0.5
+        w_vQ = 0.0  # 0.025  # 0.125
+        w_ψQ = 0.25
+        w_ωQ = 0.25
+        w_Δa = 0.25
+        w_dq = 0.25
 
-        reward_weights = np.array([w_xP, w_vP, w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa])
+        reward_weights = np.array([w_xP, w_vP, w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa, w_dq])
         weights = reward_weights / sum(reward_weights)
 
         scale_xP = 1.0/0.1
@@ -620,6 +621,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         scale_ψQ = 1.0/(pi/4)
         scale_ωQ = 1.0/0.25
         scale_Δa = 1.0/0.1
+        scale_dq = 1.0/0.4
         
         exP = norm(self.data.qpos[7:10] - self.xPd[self.timestep], ord=2)
         evP = norm(self.data.qvel[6:9] - self.vPd[self.timestep], ord=2)
@@ -631,11 +633,19 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         exp_weights = exp(-np.linspace(0, 1, self.history_len))
         diffs = [norm(action_seq[i] - action_seq[i - 1], ord=2) for i in range(1, self.history_len + 1)]
         eΔa = sum(exp_weights * diffs) / sum(exp_weights)
-
-        rewards = exp(-np.array([scale_xP, scale_vP, scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa])
-                      *np.array([exP, evP, exQ, evQ, eψQ, eωQ, eΔa]))
-        reward_dict = dict(zip(names, weights * rewards))
-        total_reward = sum(weights * rewards)
+        edq = norm((self.data.qvel[0:3] - self.data.qvel[6:9]) / self.cable_length, ord=2)
+        # rewards = exp(-np.array([scale_xP, scale_vP, scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa])
+        #               *np.array([exP, evP, exQ, evQ, eψQ, eωQ, eΔa]))
+        # reward_dict = dict(zip(names, weights * rewards))
+        # total_reward = sum(weights * rewards)
+        r_xP = w_xP * exp(-scale_xP * exP)
+        r_ψQ = w_ψQ * exp(-scale_ψQ * eψQ)
+        r_ωQ = w_ωQ * exp(-scale_ωQ * eωQ)
+        r_Δa = w_Δa * exp(-scale_Δa * eΔa)
+        r_dq = w_dq * exp(-scale_dq * edq)
+        rewards = np.array([r_xP, r_ψQ, r_ωQ, r_Δa])
+        reward_dict = dict(zip(names, rewards))
+        total_reward = r_xP * (1 + r_ψQ + r_ωQ + r_dq) + r_Δa
 
         return total_reward, reward_dict
 
@@ -710,37 +720,6 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         #     self.mujoco_renderer.viewer.scn.ngeom = 0
         #     self.render_trajectory(self.mujoco_renderer.viewer.scn, self.xPd)
         return self.mujoco_renderer.render(self.render_mode)
-
-    def add_visual_capsule(self, scene, point1, point2, radius, rgba):
-        """Adds a visual capsule (line segment) between two points in the Mujoco scene."""
-        if scene.ngeom >= scene.maxgeom:
-            return
-        scene.ngeom += 1  # Increase number of geometries
-
-        # Initialize capsule geom
-        mj.mjv_initGeom(scene.geoms[scene.ngeom - 1],
-                        mj.mjtGeom.mjGEOM_CAPSULE, np.zeros(3),
-                        np.zeros(3), np.zeros(9), rgba.astype(np.float32))
-
-        # Connect two points with a capsule (thin line)
-        mj.mjv_connector(scene.geoms[scene.ngeom - 1],
-                        mj.mjtGeom.mjGEOM_CAPSULE, radius,
-                        point1, point2)
-
-    def render_trajectory(self, scene, xPd):
-        """Renders the entire trajectory xPd as a line using visual capsules."""
-        num_traj_points = xPd.shape[0]
-        
-        for i in range(num_traj_points - 1):
-            rgba = np.array([1, 0, 0, 1])  # Red color for the trajectory
-            radius = 0.01  # Thin line radius
-            self.add_visual_capsule(scene, xPd[i], xPd[i + 1], radius, rgba)
-        print("Trajectory added")
-
-    def scene_callback(self, physics, scn):
-        """Callback function to render the desired trajectory."""
-        print("callback")
-        self.render_trajectory(scn, physics.env.xPd)  # Use xPd from the environment
 
     def close(self):
         if self.mujoco_renderer is not None:
