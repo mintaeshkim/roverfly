@@ -83,7 +83,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_rotor_dynamics = False
         self.is_action_filter  = False
         self.is_ema_action     = False
-        self.is_record_action  = False
+        self.is_record_action  = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -600,55 +600,46 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.test_record_Q.record(pos_curr=self.xQ, vel_curr=self.vQ, pos_d=self.xQd, vel_d=self.vQd)
 
     def _get_reward(self):
-        names = ['xP_rew', 'vP_rew', 'xQ_rew', 'vQ_rew', 'ψQ_rew', 'ωQ_rew', 'Δa_rew']
-        
-        w_xP = 1.0
-        w_vP = 0.0  # 0.25
-        w_xQ = 0.0  # 0.1  # 0.5
-        w_vQ = 0.0  # 0.025  # 0.125
-        w_ψQ = 0.25
-        w_ωQ = 0.25
-        w_Δa = 0.25
-        w_dq = 0.25
+        weights = {'xP':1.0, 'vP':0.25, 'xQ':0.1, 'vQ':0.025,
+                   'ψQ':0.25, 'ωQ':0.25, 'Δa':0.25, 'dq':0.1}
+        weights = {k: v / sum(list(weights.values())) for k, v in weights.items()}
 
-        reward_weights = np.array([w_xP, w_vP, w_xQ, w_vQ, w_ψQ, w_ωQ, w_Δa, w_dq])
-        weights = reward_weights / sum(reward_weights)
-
-        scale_xP = 1.0/0.1
-        scale_vP = 1.0/0.4
-        scale_xQ = 1.0/0.1
-        scale_vQ = 1.0/0.4
-        scale_ψQ = 1.0/(pi/4)
-        scale_ωQ = 1.0/0.25
-        scale_Δa = 1.0/0.1
-        scale_dq = 1.0/0.4
+        scales = {'xP':1.0/0.1, 'vP':1.0/0.4, 'xQ':1.0/0.1, 'vQ':1.0/0.4,
+                  'ψQ':1.0/(pi/4), 'ωQ':1.0/0.25, 'Δa':1.0/0.1, 'dq':1.0/0.4}
         
-        exP = norm(self.data.qpos[7:10] - self.xPd[self.timestep], ord=2)
-        evP = norm(self.data.qvel[6:9] - self.vPd[self.timestep], ord=2)
-        exQ = norm(self.data.qpos[0:3] - self.xQd[self.timestep], ord=2)
-        evQ = norm(self.data.qvel[0:3] - self.vQd[self.timestep], ord=2)
-        eψQ = abs(quat2euler_raw(self.data.qpos[3:7])[2])
-        eωQ = norm(self.data.qvel[3:6], ord=2)
-        action_seq = list(self.a_buffer) + [self.action]
-        exp_weights = exp(-np.linspace(0, 1, self.history_len))
-        diffs = [norm(action_seq[i] - action_seq[i - 1], ord=2) for i in range(1, self.history_len + 1)]
-        eΔa = sum(exp_weights * diffs) / sum(exp_weights)
-        edq = norm((self.data.qvel[0:3] - self.data.qvel[6:9]) / self.cable_length, ord=2)
-        # rewards = exp(-np.array([scale_xP, scale_vP, scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa])
-        #               *np.array([exP, evP, exQ, evQ, eψQ, eωQ, eΔa]))
+        errors = {
+            'xP': norm(self.data.qpos[7:10] - self.xPd[self.timestep]),
+            'vP': norm(self.data.qvel[6:9] - self.vPd[self.timestep]),
+            'xQ': norm(self.data.qpos[0:3] - self.xQd[self.timestep]),
+            'vQ': norm(self.data.qvel[0:3] - self.vQd[self.timestep]),
+            'ψQ': abs(quat2euler_raw(self.data.qpos[3:7])[2]),
+            'ωQ': norm(self.data.qvel[3:6]),
+            'Δa': sum(exp(-np.linspace(0,1,self.history_len)) * 
+                    [norm(a-b) for a,b in zip(list(self.a_buffer)[1:]+[self.action], list(self.a_buffer)+[self.action])]) 
+                  / sum(exp(-np.linspace(0,1,self.history_len))),
+            'dq': norm((self.data.qvel[0:3] - self.data.qvel[6:9]) / self.cable_length)
+        }
+        
+        # tvec_1,2,5
+        # rewards = exp(-np.array([scale_xP, scale_vP, scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa, scale_dq])
+        #               *np.array([exP, evP, exQ, evQ, eψQ, eωQ, eΔa, edq]))
         # reward_dict = dict(zip(names, weights * rewards))
         # total_reward = sum(weights * rewards)
-        r_xP = w_xP * exp(-scale_xP * exP)
-        r_ψQ = w_ψQ * exp(-scale_ψQ * eψQ)
-        r_ωQ = w_ωQ * exp(-scale_ωQ * eωQ)
-        r_Δa = w_Δa * exp(-scale_Δa * eΔa)
-        r_dq = w_dq * exp(-scale_dq * edq)
-        names = ['xP_rew','ψQ_rew', 'ωQ_rew', 'Δa_rew', 'dq_rew']
-        rewards = np.array([r_xP, r_ψQ, r_ωQ, r_Δa, r_dq])
-        reward_dict = dict(zip(names, rewards))
-        total_reward = r_xP * (1 + r_ψQ + r_ωQ + r_dq) + r_Δa
-
-        return total_reward, reward_dict
+        # tvec_3,4
+        # r_xP = w_xP * exp(-scale_xP * exP)
+        # r_ψQ = w_ψQ * exp(-scale_ψQ * eψQ)
+        # r_ωQ = w_ωQ * exp(-scale_ωQ * eωQ)
+        # r_Δa = w_Δa * exp(-scale_Δa * eΔa)
+        # r_dq = w_dq * exp(-scale_dq * edq)
+        # names = ['xP_rew','ψQ_rew', 'ωQ_rew', 'Δa_rew', 'dq_rew']
+        # rewards = np.array([r_xP, r_ψQ, r_ωQ, r_Δa, r_dq])
+        # reward_dict = dict(zip(names, rewards))
+        # total_reward = r_xP * (1 + r_ψQ + r_ωQ + r_dq) + r_Δa
+        # tvec_6
+        rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
+        weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
+        total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ']) * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq']) + weighted_rewards['Δa']
+        return total_reward, rewards
 
     def _terminated(self):
         xQ = self.data.qpos[0:3]

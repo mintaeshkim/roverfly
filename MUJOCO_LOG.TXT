@@ -4,3 +4,11 @@ WARNING: mju_openResource: unknown file '../assets/quadrotor_center.xml'
 Sun May 26 22:51:07 2024
 WARNING: mju_openResource: unknown file '../assets/quadrotor_center.xml'
 
+# w_xP = 1.0
+# w_vP = 0.25  # tvec_1: 0.25 / tvec_2,5: 0.25 / tvec_3: 0
+# w_xQ = 0.1  # tvec_1: 0.8 / tvec_2: 0.1 / tvec_3: 0
+# w_vQ = 0.025  # tvec_1: 0.2 / tvec_2,5:  0.025 / tvec_3: 0 
+# w_ψQ = 0.25
+# w_ωQ = 0.25
+# w_Δa = 0.25
+# w_dq = 0.1  # tvec_3: 0 / tvec_4,5: 0.25
