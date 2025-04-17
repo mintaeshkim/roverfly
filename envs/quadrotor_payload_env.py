@@ -271,20 +271,25 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     def _reset_model(self):
         if not self.is_full_traj: self.max_timesteps = self.track_timesteps
 
-        self.traj = ut.CrazyTrajectoryPayload(
-            tf=self.max_timesteps*self.policy_dt,
-            ax=choice([-1,1])*2.0,
-            ay=choice([-1,1])*2.0,
-            az=choice([-1,1])*1.0,
-            f1=choice([-1,1])*0.2,
-            f2=choice([-1,1])*0.2,
-            f3=choice([-1,1])*0.1
-        )
+        # self.traj = ut.CrazyTrajectoryPayload(
+        #     tf=self.max_timesteps*self.policy_dt,
+        #     ax=choice([-1,1])*2.0,
+        #     ay=choice([-1,1])*2.0,
+        #     az=choice([-1,1])*1.0,
+        #     f1=choice([-1,1])*0.2,
+        #     f2=choice([-1,1])*0.2,
+        #     f3=choice([-1,1])*0.1
+        # )
+        self.type = np.random.choice(["crazy_1", "crazy_2", "crazy_3", "crazy_4",
+                                      "swing_1", "swing_2", "swing_3", "swing_4",
+                                      "circle_1", "circle_2", "circle_3", "circle_4",
+                                      "hover"])
+        self.traj = ut.PredefinedTrajectoryPayload(type="swing_1")
         
         if self.is_full_traj: self.traj = ut.FullCrazyTrajectoryPayload(tf=40, traj=self.traj)
 
-        # self.traj.plot()
-        # self.traj.plot3d_payload()
+        self.traj.plot()
+        self.traj.plot3d_payload()
 
         """ Generate trajectory """
         self._generate_trajectory()
@@ -615,7 +620,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             'ψQ': abs(quat2euler_raw(self.data.qpos[3:7])[2]),
             'ωQ': norm(self.data.qvel[3:6]),
             'Δa': sum(exp(-np.linspace(0,1,self.history_len)) * 
-                    [norm(a-b) for a,b in zip(list(self.a_buffer)[1:]+[self.action], list(self.a_buffer)+[self.action])]) 
+                      [norm(a-b) for a,b in zip(list(self.a_buffer)[1:]+[self.action], list(self.a_buffer)+[self.action])]) 
                   / sum(exp(-np.linspace(0,1,self.history_len))),
             'dq': norm((self.data.qvel[0:3] - self.data.qvel[6:9]) / self.cable_length)
         }
