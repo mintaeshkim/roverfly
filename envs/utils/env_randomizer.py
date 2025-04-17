@@ -46,8 +46,8 @@ class EnvRandomizer(object):
             self._default_tendon_max_length = 1.0
 
             # Payload and tendon scales
-            self.payload_mass_scale = 2.0  # [0.0, 2.0]
-            self.tendon_length_scale = 1.5  # [0.025, 1.0] m
+            self.payload_mass_scale = 2.0  # [0.0, 0.2] kg
+            self.tendon_length_scale = 1.5  # [0.025, 1.5] m
 
     def randomize_env(self, model):
         model = self.reset_env(model=model)
