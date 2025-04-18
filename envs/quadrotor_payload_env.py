@@ -271,25 +271,25 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     def _reset_model(self):
         if not self.is_full_traj: self.max_timesteps = self.track_timesteps
 
-        # self.traj = ut.CrazyTrajectoryPayload(
-        #     tf=self.max_timesteps*self.policy_dt,
-        #     ax=choice([-1,1])*2.0,
-        #     ay=choice([-1,1])*2.0,
-        #     az=choice([-1,1])*1.0,
-        #     f1=choice([-1,1])*0.2,
-        #     f2=choice([-1,1])*0.2,
-        #     f3=choice([-1,1])*0.1
-        # )
-        self.type = np.random.choice(["crazy_1", "crazy_2", "crazy_3", "crazy_4",
-                                      "swing_1", "swing_2", "swing_3", "swing_4",
-                                      "circle_1", "circle_2", "circle_3", "circle_4",
-                                      "hover"])
-        self.traj = ut.PredefinedTrajectoryPayload(type="swing_1")
+        self.traj = ut.CrazyTrajectoryPayload(
+            tf=self.max_timesteps*self.policy_dt,
+            ax=choice([-1,1])*2.0,
+            ay=choice([-1,1])*2.0,
+            az=choice([-1,1])*1.0,
+            f1=choice([-1,1])*0.2,
+            f2=choice([-1,1])*0.2,
+            f3=choice([-1,1])*0.1
+        )
+        # self.type = np.random.choice(["crazy_1", "crazy_2", "crazy_3", "crazy_4",
+        #                               "swing_1", "swing_2", "swing_3", "swing_4",
+        #                               "circle_1", "circle_2", "circle_3", "circle_4",
+        #                               "hover"])
+        # self.traj = ut.PredefinedTrajectoryPayload(type="swing_1")
         
         if self.is_full_traj: self.traj = ut.FullCrazyTrajectoryPayload(tf=40, traj=self.traj)
 
-        self.traj.plot()
-        self.traj.plot3d_payload()
+        # self.traj.plot()
+        # self.traj.plot3d_payload()
 
         """ Generate trajectory """
         self._generate_trajectory()
@@ -383,6 +383,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.exQ = self.xQ - self.xQd[self.timestep]
         self.evQ = self.vQ - self.vQd[self.timestep]
         self.e_curr = concatenate([self.RQ.T @ self.exP, self.RQ.T @ self.evP, self.RQ.T @ self.exQ, self.RQ.T @ self.evQ])
+
+        # print(self.exP)
 
         obs_curr = concatenate([self.s_curr, self.e_curr, self.action])  # 42
 
@@ -625,25 +627,22 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             'dq': norm((self.data.qvel[0:3] - self.data.qvel[6:9]) / self.cable_length)
         }
         
-        # tvec_1,2,5
-        # rewards = exp(-np.array([scale_xP, scale_vP, scale_xQ, scale_vQ, scale_ψQ, scale_ωQ, scale_Δa, scale_dq])
-        #               *np.array([exP, evP, exQ, evQ, eψQ, eωQ, eΔa, edq]))
-        # reward_dict = dict(zip(names, weights * rewards))
-        # total_reward = sum(weights * rewards)
-        # tvec_3,4
-        # r_xP = w_xP * exp(-scale_xP * exP)
-        # r_ψQ = w_ψQ * exp(-scale_ψQ * eψQ)
-        # r_ωQ = w_ωQ * exp(-scale_ωQ * eωQ)
-        # r_Δa = w_Δa * exp(-scale_Δa * eΔa)
-        # r_dq = w_dq * exp(-scale_dq * edq)
-        # names = ['xP_rew','ψQ_rew', 'ωQ_rew', 'Δa_rew', 'dq_rew']
-        # rewards = np.array([r_xP, r_ψQ, r_ωQ, r_Δa, r_dq])
-        # reward_dict = dict(zip(names, rewards))
-        # total_reward = r_xP * (1 + r_ψQ + r_ωQ + r_dq) + r_Δa
-        # tvec_6
+        """Simple summation: tvec_1, 2 (dq x), 5 (dq o)"""
+        # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
+        # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
+        # total_reward = sum(weighted_rewards.values())
+        """Product xP only: tvec_3 (dq x), 4 (dq o)"""
+        # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
+        # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
+        # total_reward = weighted_rewards['xP'] * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq']) + weighted_rewards['Δa']
+        """Product x, v: tvec_6 (modify tvec_4 + vP, xQ, vQ)"""
+        # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
+        # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
+        # total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ']) * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq']) + weighted_rewards['Δa']
+        """Product x, v, Δa: tvec_7 (modify tvec_6)"""
         rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
         weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
-        total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ']) * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq']) + weighted_rewards['Δa']
+        total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ','Δa']) * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq'])
         return total_reward, rewards
 
     def _terminated(self):
