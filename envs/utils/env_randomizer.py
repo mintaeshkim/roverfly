@@ -1,6 +1,6 @@
 import mujoco as mj
 import numpy as np
-from numpy.random import uniform, randn
+from numpy.random import choice, uniform, randn
 from numpy.linalg import norm
 from numpy import cos, sin, zeros
 from copy import copy
@@ -64,8 +64,10 @@ class EnvRandomizer(object):
             gear *= 1.0 + uniform(low=-self.actuator_gear_noise_scale, high=self.actuator_gear_noise_scale, size=len(gear))
         
         if self.has_payload:
-            payload_mass = self._default_body_mass[self.payload_body_id] * uniform(low=0, high=self.payload_mass_scale)
-            tendon_length = uniform(0.025, self.tendon_length_scale)
+            # payload_mass = self._default_body_mass[self.payload_body_id] * uniform(low=0, high=self.payload_mass_scale)
+            # tendon_length = uniform(0.025, self.tendon_length_scale)
+            payload_mass = choice([0.0, 0.1, 0.2])
+            tendon_length = choice([0.0, 0.5, 1.0])
             model.body_ipos[self.payload_body_id] = self._default_hook_core_site_pos + np.array([0, 0, -tendon_length])
             model.body_mass[self.payload_body_id] = payload_mass
             model.tendon_range[0][1] = tendon_length

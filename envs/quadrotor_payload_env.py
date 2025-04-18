@@ -83,7 +83,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_rotor_dynamics = False
         self.is_action_filter  = False
         self.is_ema_action     = False
-        self.is_record_action  = False
+        self.is_record_action  = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -384,8 +384,6 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.evQ = self.vQ - self.vQd[self.timestep]
         self.e_curr = concatenate([self.RQ.T @ self.exP, self.RQ.T @ self.evP, self.RQ.T @ self.exQ, self.RQ.T @ self.evQ])
 
-        # print(self.exP)
-
         obs_curr = concatenate([self.s_curr, self.e_curr, self.action])  # 42
 
         return obs_curr
@@ -608,11 +606,11 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
 
     def _get_reward(self):
         weights = {'xP':1.0, 'vP':0.25, 'xQ':0.1, 'vQ':0.025,
-                   'ψQ':0.25, 'ωQ':0.25, 'Δa':0.25, 'dq':0.1}
+                   'ψQ':0.25, 'ωQ':0.25, 'a':0.25, 'Δa':0.25, 'dq':0.1}
         weights = {k: v / sum(list(weights.values())) for k, v in weights.items()}
 
         scales = {'xP':1.0/0.1, 'vP':1.0/0.4, 'xQ':1.0/0.1, 'vQ':1.0/0.4,
-                  'ψQ':1.0/(pi/4), 'ωQ':1.0/0.25, 'Δa':1.0/0.1, 'dq':1.0/0.4}
+                  'ψQ':1.0/(pi/4), 'ωQ':1.0/0.25, 'a':1.0/0.5, 'Δa':1.0/0.1, 'dq':1.0/0.4}
         
         errors = {
             'xP': norm(self.data.qpos[7:10] - self.xPd[self.timestep]),
@@ -621,6 +619,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             'vQ': norm(self.data.qvel[0:3] - self.vQd[self.timestep]),
             'ψQ': abs(quat2euler_raw(self.data.qpos[3:7])[2]),
             'ωQ': norm(self.data.qvel[3:6]),
+            'a': norm(self.raw_action),
             'Δa': sum(exp(-np.linspace(0,1,self.history_len)) * 
                       [norm(a-b) for a,b in zip(list(self.a_buffer)[1:]+[self.action], list(self.a_buffer)+[self.action])]) 
                   / sum(exp(-np.linspace(0,1,self.history_len))),
@@ -630,8 +629,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         """Simple summation: tvec_1, 2 (dq x), 5 (dq o)"""
         # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
         # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
-        # total_reward = sum(weighted_rewards.values())
-        """Product xP only: tvec_3 (dq x), 4 (dq o)"""
+        # total_reward = sum(list(weighted_rewards.values()))
+        """Product xP only: tvec_3 (dq x), 4 (dq o) modify for exP"""
         # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
         # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
         # total_reward = weighted_rewards['xP'] * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq']) + weighted_rewards['Δa']
@@ -639,10 +638,14 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
         # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
         # total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ']) * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq']) + weighted_rewards['Δa']
-        """Product x, v, Δa: tvec_7 (modify tvec_6)"""
+        """Product x, v, Δa: tvec_7 (modify tvec_6 for more Δa penalty)"""
+        # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
+        # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
+        # total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ','Δa']) * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq'])
+        """Product x, v: tvec_8 (modify tvec_6 for ea)"""
         rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
         weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
-        total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ','Δa']) * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq'])
+        total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ','a']) * (1 + sum(weighted_rewards[k] for k in ['ψQ','ωQ','dq','Δa']))
         return total_reward, rewards
 
     def _terminated(self):
@@ -748,6 +751,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
 
         plt.tight_layout()
         plt.show()
+
 
 class TestRecord:
     def __init__(self, max_timesteps, record_object, num_sims_per_env_step):
