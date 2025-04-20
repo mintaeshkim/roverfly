@@ -6,7 +6,9 @@ sys.path.append(os.path.join(parent_dir))
 sys.path.append(os.path.join(parent_dir, 'utils'))
 import numpy as np
 import warnings
+import matplotlib as mpl
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from utils.geo_tools import *
 
 def random_point_on_sphere(radius):
@@ -86,38 +88,72 @@ class Trajectory:
         ax.legend()
         plt.show()
 
-    def plot3d_payload(self):
-        T = np.linspace(0, self._tf, 100)
+    def plot3d_payload(self, save_path=None):
+        # Font and style settings
+        mpl.rcParams['font.family'] = 'serif'
+        mpl.rcParams['axes.labelsize'] = 14
+        mpl.rcParams['xtick.labelsize'] = 12
+        mpl.rcParams['ytick.labelsize'] = 12
+        mpl.rcParams['legend.fontsize'] = 12
+        plt.style.use('seaborn-v0_8-whitegrid')
 
+        # Sample points
+        T = np.linspace(0, self._tf, 100)
         x = np.empty((0, 3))
         q = np.empty((0, 3))
         for t in T:
             x_, _, _, _, q_, _, _ = self.get(t)
-            x = np.append(x, np.array([x_]), axis=0)
-            q = np.append(q, np.array([q_]), axis=0)
+            x = np.append(x, [x_], axis=0)
+            q = np.append(q, [q_], axis=0)
 
-        fig = plt.figure(figsize=(10, 7))
+        fig = plt.figure(figsize=(8, 6))
         ax = fig.add_subplot(111, projection='3d')
-        ax.plot(x[:, 0], x[:, 1], x[:, 2], label='Trajectory', color='b', linewidth=2)
-        ax.set_title('3D Trajectory')
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
-        ax.legend()
 
-        max_range = np.array([x[:, 0].max()-x[:, 0].min(), x[:, 1].max()-x[:, 1].min(), x[:, 2].max()-x[:, 2].min()]).max() / 2.0
-        mid_x = (x[:, 0].max()+x[:, 0].min()) * 0.5
-        mid_y = (x[:, 1].max()+x[:, 1].min()) * 0.5
-        mid_z = (x[:, 2].max()+x[:, 2].min()) * 0.5
+        # Plot trajectory
+        ax.plot(x[:, 0], x[:, 1], x[:, 2], color='#0055a4', linewidth=2.0)
+
+        # Draw arrows for cable direction (from payload to quadrotor)
+        step = len(T) // 25
+        for i in range(0, len(T), step):
+            ax.quiver(x[i, 0], x[i, 1], x[i, 2],
+                    -q[i, 0], -q[i, 1], -q[i, 2],
+                    length=0.4, color='crimson', linewidth=1.0,
+                    arrow_length_ratio=0.1, normalize=True)
+
+        # Start and End points
+        ax.scatter(*x[0], color='green', s=25, label='Start / End')
+
+        # Set labels
+        ax.set_xlabel(r'$x$ [m]')
+        ax.set_ylabel(r'$y$ [m]')
+        ax.set_zlabel(r'$z$ [m]')
+
+        # Equal aspect ratio
+        max_range = np.array([x[:, 0].ptp(), x[:, 1].ptp(), x[:, 2].ptp()]).max() / 2.0
+        mid_x = (x[:, 0].max() + x[:, 0].min()) * 0.5
+        mid_y = (x[:, 1].max() + x[:, 1].min()) * 0.5
+        mid_z = (x[:, 2].max() + x[:, 2].min()) * 0.5
         ax.set_xlim(mid_x - max_range, mid_x + max_range)
         ax.set_ylim(mid_y - max_range, mid_y + max_range)
         ax.set_zlim(mid_z - max_range, mid_z + max_range)
 
-        step = len(T) // 20
-        for i in range(0, len(T), step):
-            ax.quiver(x[i, 0], x[i, 1], x[i, 2], -q[i, 0], -q[i, 1], -q[i, 2], length=0.5, normalize=True, color='r',  arrow_length_ratio=0.01)
+        # Camera angle for better view
+        ax.view_init(elev=25, azim=-45)
 
+        # Hide grid planes
+        ax.xaxis.pane.fill = False
+        ax.yaxis.pane.fill = False
+        ax.zaxis.pane.fill = False
+
+        # Legend (optional)
+        ax.legend(loc='upper left')
+
+        # Tight layout and optional save
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, dpi=600, bbox_inches='tight')
         plt.show()
+
     
     def plot3d_payload_geometric(self):
         T = np.linspace(0, self._tf, 100)

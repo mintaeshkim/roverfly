@@ -357,10 +357,10 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     def _get_obs(self):
         self.obs_curr = self._get_obs_curr()  # 42
 
-        s_buffer = asarray(self.s_buffer, dtype=np.float32).flatten()  # 120
+        s_buffer = asarray(self.s_buffer, dtype=np.float32).flatten()  # 130
         d_buffer = asarray(self.d_buffer, dtype=np.float32).flatten()  # 60
-        a_buffer = asarray(self.a_buffer, dtype=np.float32).flatten()  # 20
-        io_history = concatenate([s_buffer, d_buffer, a_buffer])  # 200
+        a_buffer = asarray(self.a_buffer, dtype=np.float32).flatten()  # 15
+        io_history = concatenate([s_buffer, d_buffer, a_buffer])  # 105
 
         xP_ff = self.xP - self.xPd[self.timestep : self.timestep + self.future_len]
         vP_ff = self.vP - self.vPd[self.timestep : self.timestep + self.future_len]
@@ -599,10 +599,6 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.time_in_sec = round(self.time_in_sec + self.policy_dt, 2)
         self.timestep += 1
         self.total_reward += reward
-    
-    def _record(self):
-        self.test_record_P.record(pos_curr=self.xP, vel_curr=self.vP, pos_d=self.xPd[self.timestep], vel_d=self.vPd[self.timestep])
-        self.test_record_Q.record(pos_curr=self.xQ, vel_curr=self.vQ, pos_d=self.xQd, vel_d=self.vQd)
 
     def _get_reward(self):
         weights = {'xP':1.0, 'vP':0.25, 'xQ':0.1, 'vQ':0.025,
@@ -623,7 +619,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             'Δa': sum(exp(-np.linspace(0,1,self.history_len)) * 
                       [norm(a-b) for a,b in zip(list(self.a_buffer)[1:]+[self.action], list(self.a_buffer)+[self.action])]) 
                   / sum(exp(-np.linspace(0,1,self.history_len))),
-            'dq': norm((self.data.qvel[0:3] - self.data.qvel[6:9]) / self.cable_length)
+            'dq': norm((self.data.qvel[0:3] - self.data.qvel[6:9]) / self.cable_length if not self.cable_length == 0 else 0)
         }
         
         """Simple summation: tvec_1, 2 (dq x), 5 (dq o)"""
@@ -631,9 +627,9 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
         # total_reward = sum(list(weighted_rewards.values()))
         """Product xP only: tvec_3 (dq x), 4 (dq o) modify for exP"""
-        # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
-        # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
-        # total_reward = weighted_rewards['xP'] * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq']) + weighted_rewards['Δa']
+        rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
+        weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
+        total_reward = weighted_rewards['xP'] * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq']) + weighted_rewards['a'] + weighted_rewards['Δa']
         """Product x, v: tvec_6 (modify tvec_4 + vP, xQ, vQ)"""
         # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
         # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
@@ -643,9 +639,9 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
         # total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ','Δa']) * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq'])
         """Product x, v: tvec_8 (modify tvec_6 for ea)"""
-        rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
-        weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
-        total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ','a']) * (1 + sum(weighted_rewards[k] for k in ['ψQ','ωQ','dq','Δa']))
+        # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
+        # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
+        # total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ','a']) * (1 + sum(weighted_rewards[k] for k in ['ψQ','ωQ','dq','Δa']))
         return total_reward, rewards
 
     def _terminated(self):
@@ -751,129 +747,6 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
 
         plt.tight_layout()
         plt.show()
-
-
-class TestRecord:
-    def __init__(self, max_timesteps, record_object, num_sims_per_env_step):
-        self.max_timesteps = max_timesteps
-        self.num_sims_per_env_step = num_sims_per_env_step
-        
-        self.max_steps = self.max_timesteps // self.num_sims_per_env_step
-        self.step = 0
-        self.rec_obj = record_object
-
-        self.pos_x = zeros(self.max_steps)
-        self.pos_y = zeros(self.max_steps)
-        self.pos_z = zeros(self.max_steps)
-        self.pos_x_d = zeros(self.max_steps)
-        self.pos_y_d = zeros(self.max_steps)
-        self.pos_z_d = zeros(self.max_steps)
-
-        self.vel_x = zeros(self.max_steps)
-        self.vel_y = zeros(self.max_steps)
-        self.vel_z = zeros(self.max_steps)
-        self.vel_x_d = zeros(self.max_steps)
-        self.vel_y_d = zeros(self.max_steps)
-        self.vel_z_d = zeros(self.max_steps)
-    
-    def record(self, pos_curr, vel_curr, pos_d, vel_d):
-        self.pos_x[self.step] = pos_curr[0]
-        self.pos_y[self.step] = pos_curr[1]
-        self.pos_z[self.step] = pos_curr[2]
-        self.vel_x[self.step] = vel_curr[0]
-        self.vel_y[self.step] = vel_curr[1]
-        self.vel_z[self.step] = vel_curr[2]
-
-        self.pos_x_d[self.step] = pos_d[0]
-        self.pos_y_d[self.step] = pos_d[1]
-        self.pos_z_d[self.step] = pos_d[2]
-        self.vel_x_d[self.step] = vel_d[0]
-        self.vel_y_d[self.step] = vel_d[1]
-        self.vel_z_d[self.step] = vel_d[2]
-
-        self.step += 1
-    
-    def reset(self):
-        self.max_steps = self.max_timesteps // self.num_sims_per_env_step
-        self.step = 0
-
-        self.pos_x = zeros(self.max_steps)
-        self.pos_y = zeros(self.max_steps)
-        self.pos_z = zeros(self.max_steps)
-        self.pos_x_d = zeros(self.max_steps)
-        self.pos_y_d = zeros(self.max_steps)
-        self.pos_z_d = zeros(self.max_steps)
-
-        self.vel_x = zeros(self.max_steps)
-        self.vel_y = zeros(self.max_steps)
-        self.vel_z = zeros(self.max_steps)
-        self.vel_x_d = zeros(self.max_steps)
-        self.vel_y_d = zeros(self.max_steps)
-        self.vel_z_d = zeros(self.max_steps)
-
-    def plot_error(self):
-        # Plotting
-        fig, axs = plt.subplots(6, 1, figsize=(10, 18))
-        timesteps = np.arange(self.max_steps)
-
-        # pos_x and pos_x_d
-        axs[0].plot(timesteps, self.pos_x, label='pos_x '+self.rec_obj, linestyle='-')
-        axs[0].plot(timesteps, self.pos_x_d, label='pos_x_d '+self.rec_obj, linestyle='--')
-        axs[0].set_title('x '+self.rec_obj)
-        axs[0].legend()
-
-        # pos_y and pos_y_d
-        axs[1].plot(timesteps, self.pos_y, label='pos_y '+self.rec_obj, linestyle='-')
-        axs[1].plot(timesteps, self.pos_y_d, label='pos_y_d '+self.rec_obj, linestyle='--')
-        axs[1].set_title('y '+self.rec_obj)
-        axs[1].legend()
-
-        # pos_z and pos_z_d
-        axs[2].plot(timesteps, self.pos_z, label='pos_z '+self.rec_obj, linestyle='-')
-        axs[2].plot(timesteps, self.pos_z_d, label='pos_z_d '+self.rec_obj, linestyle='--')
-        axs[2].set_title('z '+self.rec_obj)
-        axs[2].legend()
-
-        # vel_x and vel_x_d
-        axs[3].plot(timesteps, self.vel_x, label='vel_x '+self.rec_obj, linestyle='-')
-        axs[3].plot(timesteps, self.vel_x_d, label='vel_x_d '+self.rec_obj, linestyle='--')
-        axs[3].set_title('vx '+self.rec_obj)
-        axs[3].legend()
-
-        # vel_y and vel_y_d
-        axs[4].plot(timesteps, self.vel_y, label='vel_y '+self.rec_obj, linestyle='-')
-        axs[4].plot(timesteps, self.vel_y_d, label='vel_y_d '+self.rec_obj, linestyle='--')
-        axs[4].set_title('vy '+self.rec_obj)
-        axs[4].legend()
-
-        # vel_z and vel_z_d
-        axs[5].plot(timesteps, self.vel_z, label='vel_z '+self.rec_obj, linestyle='-')
-        axs[5].plot(timesteps, self.vel_z_d, label='vel_z_d '+self.rec_obj, linestyle='--')
-        axs[5].set_title('vz '+self.rec_obj)
-        axs[5].legend()
-
-        # Layout adjustment
-        plt.tight_layout()
-
-        plt.show()
-
-    def save_data(self):
-        data = {
-            'pos_x': self.pos_x,
-            'pos_y': self.pos_y,
-            'pos_z': self.pos_z,
-            'vel_x': self.vel_x,
-            'vel_y': self.vel_y,
-            'vel_z': self.vel_z
-        }
-
-        # Create a pandas DataFrame from the dictionary
-        df = pd.DataFrame(data)
-
-        # Save the DataFrame to a CSV file
-        df.to_csv('/Users/mintaekim/Desktop/HRL/Quadrotor/quadrotor_v1/train/data/state_data.csv', index=False)
-
-        print("Data saved to state_data.csv")
 
 
 if __name__ == "__main__":
