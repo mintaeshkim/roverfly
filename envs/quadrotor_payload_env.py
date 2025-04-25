@@ -82,7 +82,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_full_traj      = False
         self.is_rotor_dynamics = False
         self.is_action_filter  = False
-        self.is_ema_action     = False
+        self.is_ema_action     = True
         self.is_record_action  = True
         # endregion
         ##################################################
@@ -90,7 +90,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         ##################################################
         # region
         self.env_num           = env_num
-        self.s_dim             = 24
+        self.s_dim             = 26
+        self.d_dim             = 12
         self.a_dim             = 4 if self.control_scheme in ["srt", "ctbr"] else 3
         self.o_dim             = 312 if self.control_scheme in ["srt", "ctbr"] else 306
         self.history_len_short = 5
@@ -98,8 +99,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.history_len       = self.history_len_short
         self.future_len        = 5
         self.s_buffer          = deque(zeros((self.history_len, self.s_dim)), maxlen=self.history_len)
-        self.d_buffer          = deque(zeros((self.history_len, 12)), maxlen=self.history_len)
-        self.a_buffer          = deque(zeros((self.history_len, 4)), maxlen=self.history_len)
+        self.d_buffer          = deque(zeros((self.history_len, self.d_dim)), maxlen=self.history_len)
+        self.a_buffer          = deque(zeros((self.history_len, self.a_dim)), maxlen=self.history_len)
         self.action_offset     = zeros(self.a_dim) if self.control_scheme in ["ctbr", "tvec"] else -0.4 * ones(4)
         self.force_offset      = 2.3 * ones(4)  # Warm start
         self.action_last       = self.action_offset
@@ -355,12 +356,12 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.edφP_prev, self.edθP_prev, self.edψP_prev = 0, 0, 0
 
     def _get_obs(self):
-        self.obs_curr = self._get_obs_curr()  # 42
+        self.obs_curr = self._get_obs_curr()  # 41
 
         s_buffer = asarray(self.s_buffer, dtype=np.float32).flatten()  # 130
         d_buffer = asarray(self.d_buffer, dtype=np.float32).flatten()  # 60
         a_buffer = asarray(self.a_buffer, dtype=np.float32).flatten()  # 15
-        io_history = concatenate([s_buffer, d_buffer, a_buffer])  # 105
+        io_history = concatenate([s_buffer, d_buffer, a_buffer])  # 205
 
         xP_ff = self.xP - self.xPd[self.timestep : self.timestep + self.future_len]
         vP_ff = self.vP - self.vPd[self.timestep : self.timestep + self.future_len]
@@ -373,7 +374,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                           (xQ_ff @ self.RQ).flatten(),
                           (vQ_ff @ self.RQ).flatten()])  # 60
 
-        return concatenate([self.obs_curr, io_history, ff])  # 302
+        return concatenate([self.obs_curr, io_history, ff])  # 306
 
     def _get_obs_curr(self):
         self.s_curr = self._get_state_curr()  # 26
@@ -384,7 +385,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.evQ = self.vQ - self.vQd[self.timestep]
         self.e_curr = concatenate([self.RQ.T @ self.exP, self.RQ.T @ self.evP, self.RQ.T @ self.exQ, self.RQ.T @ self.evQ])
 
-        obs_curr = concatenate([self.s_curr, self.e_curr, self.action])  # 42
+        obs_curr = concatenate([self.s_curr, self.e_curr, self.action])  # 41
 
         return obs_curr
 
