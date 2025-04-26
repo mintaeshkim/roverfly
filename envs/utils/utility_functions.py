@@ -57,14 +57,21 @@ def dual_tanh_tvec(x):
     tanh2 = (max_Fz - mg) * (1 + np.tanh(3 * x - 2)) / 2
     return tanh1 + tanh2
 
+def dual_tanh_srt(x):
+    rotor_thrust_offset = 8.19135 / 4
+    max_rotor_thrust = 7.5
+    tanh1 = rotor_thrust_offset * (1 + np.tanh(3 * x + 2)) / 2
+    tanh2 = (max_rotor_thrust - rotor_thrust_offset) * (1 + np.tanh(3 * x - 2)) / 2
+    return tanh1 + tanh2
+
 if __name__ == "__main__":
 
     x_vals = np.linspace(-1, 1, 500)
-    y_vals = dual_tanh_tvec(x_vals)
+    y_vals = dual_tanh_srt(x_vals)
 
     plt.plot(x_vals, y_vals)
     plt.xlabel("x")
-    plt.ylabel("dual_tanh_tvec(x)")
-    plt.title("Graph of dual_tanh_tvec from x = -1 to x = 1")
+    plt.ylabel("dual_tanh(x)")
+    plt.title("Graph of dual_tanh from x = -1 to x = 1")
     plt.grid(True)
     plt.show()

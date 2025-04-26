@@ -49,7 +49,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.payload_body_id = self.model.body(name="payload").id
         self.env_randomizer = EnvRandomizer(model=self.model)
         self.frame_skip = frame_skip
-        self.control_scheme = "tvec"  # ["srt", "tvec", "ctbr"]
+        self.control_scheme = "srt"  # ["srt", "tvec", "ctbr"]
         np.random.seed(env_num)
         
         ##################################################
@@ -82,8 +82,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_full_traj      = False
         self.is_rotor_dynamics = False
         self.is_action_filter  = False
-        self.is_ema_action     = True
-        self.is_record_action  = True
+        self.is_ema_action     = False
+        self.is_record_action  = False
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -441,7 +441,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         if self.control_scheme == "ctbr":
             ctrl = self._ctbr2srt(ctrl)
         elif self.control_scheme == "srt":
-            ctrl = self.rotor_max_thrust * (ctrl + 1) / 2
+            ctrl = dual_tanh_srt(ctrl)
         else: # tvec
             ctrl = self._tvec2srt(ctrl)
         self._step_mujoco_simulation(ctrl, n_frames)
