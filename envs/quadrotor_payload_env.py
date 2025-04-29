@@ -49,7 +49,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.payload_body_id = self.model.body(name="payload").id
         self.env_randomizer = EnvRandomizer(model=self.model)
         self.frame_skip = frame_skip
-        self.control_scheme = "srt"  # ["srt", "tvec", "ctbr"]
+        self.control_scheme = "ctbr"  # ["srt", "tvec", "ctbr"]
         np.random.seed(env_num)
         
         ##################################################
@@ -244,7 +244,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
 
     def reset(self, seed=None, randomize=None):
         # super().reset(seed=self.env_num)        
-        if self.is_env_randomized: self.model, self.mP, self.cable_length = self.env_randomizer.randomize_env(self.model)
+        if self.is_env_randomized:
+            self.model, self.mP, self.cable_length, _, _ = self.env_randomizer.randomize_env(self.model)
         self._reset_env()
         self._reset_model()
         self._reset_error()
@@ -447,7 +448,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self._step_mujoco_simulation(ctrl, n_frames)
 
     def _step_mujoco_simulation(self, ctrl, n_frames):
-        self.actual_forces = self._rotor_dynamics(ctrl) if self.is_rotor_dynamics else ctrl
+        if self.is_rotor_dynamics: self._rotor_dynamics(ctrl)
+        else: self.actual_forces = ctrl
         self._apply_control(ctrl=self.actual_forces)
         mj.mj_step(self.model, self.data, nstep=n_frames)
 
