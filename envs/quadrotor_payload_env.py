@@ -83,7 +83,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_rotor_dynamics = False
         self.is_action_filter  = False
         self.is_ema_action     = False
-        self.is_record_action  = False
+        self.is_record_action  = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -632,7 +632,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         """Product xP only: tvec_3 (dq x), 4 (dq o) modify for exP"""
         rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
         weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
-        total_reward = weighted_rewards['xP'] * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq']) + weighted_rewards['a'] + weighted_rewards['Δa']
+        total_reward = (weighted_rewards['xP'] + weighted_rewards['ψQ']) * (1 + weighted_rewards['ωQ'] + weighted_rewards['dq']) + weighted_rewards['a'] + weighted_rewards['Δa']
         """Product x, v: tvec_6 (modify tvec_4 + vP, xQ, vQ)"""
         # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
         # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
