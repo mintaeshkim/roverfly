@@ -35,7 +35,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     
     def __init__(
         self,
-        max_timesteps:int = 4000,
+        max_timesteps:int = 3000,
         xml_file: str = "../assets/quadrotor_falcon_payload.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
@@ -82,7 +82,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_full_traj      = False
         self.is_rotor_dynamics = False
         self.is_action_filter  = False
-        self.is_ema_action     = True
+        self.is_ema_action     = False
+        self.is_residual       = True
         self.is_record_action  = True
         # endregion
         ##################################################
@@ -405,7 +406,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
    
     def step(self, action, restore=False):
         # 1. Simulate for Single Time Step
-        self.raw_action = action
+        self.raw_action = self.action_last + np.array([0.01, 0.1, 0.1, 0.1]) * action if self.is_residual else action
         self.action = self.action_filter.filter(self.raw_action) if self.is_action_filter else self.raw_action
         if self.is_ema_action: self.action = 0.2 * self.action + 0.8 * self.action_last
         if self.is_delayed: self.action_queue.append([self.data.time, self.action])
@@ -550,10 +551,11 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         return f
 
     def _ctbr2srt(self, action):
-        zcmd = self.max_thrust * action[0]
-        dφd = action[1]
-        dθd = action[2]
-        dψd = action[3]
+        # action = self.action_last + 
+        zcmd = self.max_thrust * (1 + action[0]) / 2  # dual_tanh_payload(action[0])
+        dφd = action[1]  # tanh(action[1])
+        dθd = action[2]  # tanh(action[2])
+        dψd = action[3]  # tanh(action[3])
 
         self.edφP = dφd - self.ωQ[0]
         self.edφI = clip(self.edφI + self.edφP * self.sim_dt, -self.clipI, self.clipI)
@@ -604,8 +606,10 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.total_reward += reward
 
     def _get_reward(self):
-        weights = {'xP':1.0, 'vP':0.25, 'xQ':0.1, 'vQ':0.025,
+        weights = {'xP':1.0, 'vP':0.0, 'xQ':0.0, 'vQ':0.0,
                    'ψQ':0.25, 'ωQ':0.25, 'a':0.25, 'Δa':0.25, 'dq':0.1}
+        # weights = {'xP':1.0, 'vP':0.25, 'xQ':0.1, 'vQ':0.025,
+        #            'ψQ':0.25, 'ωQ':0.25, 'a':0.25, 'Δa':0.25, 'dq':0.1}
         weights = {k: v / sum(list(weights.values())) for k, v in weights.items()}
         scales = {'xP':1.0/0.1, 'vP':1.0/0.4, 'xQ':1.0/0.1, 'vQ':1.0/0.4,
                   'ψQ':1.0/(pi/4), 'ωQ':1.0/0.25, 'a':1.0/0.5, 'Δa':1.0/0.1, 'dq':1.0/0.4}
