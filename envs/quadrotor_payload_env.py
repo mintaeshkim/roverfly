@@ -35,7 +35,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     
     def __init__(
         self,
-        max_timesteps:int = 4500,
+        max_timesteps:int = 4000,
         xml_file: str = "../assets/quadrotor_falcon_payload.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
@@ -82,7 +82,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_full_traj      = False
         self.is_rotor_dynamics = False
         self.is_action_filter  = False
-        self.is_ema_action     = False
+        self.is_ema_action     = True
         self.is_record_action  = True
         # endregion
         ##################################################
@@ -550,10 +550,10 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         return f
 
     def _ctbr2srt(self, action):
-        zcmd = dual_tanh_payload(action[0])
-        dφd = tanh(action[1])
-        dθd = tanh(action[2])
-        dψd = tanh(action[3])
+        zcmd = self.max_thrust * action[0]
+        dφd = action[1]
+        dθd = action[2]
+        dψd = action[3]
 
         self.edφP = dφd - self.ωQ[0]
         self.edφI = clip(self.edφI + self.edφP * self.sim_dt, -self.clipI, self.clipI)
@@ -607,10 +607,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         weights = {'xP':1.0, 'vP':0.25, 'xQ':0.1, 'vQ':0.025,
                    'ψQ':0.25, 'ωQ':0.25, 'a':0.25, 'Δa':0.25, 'dq':0.1}
         weights = {k: v / sum(list(weights.values())) for k, v in weights.items()}
-
         scales = {'xP':1.0/0.1, 'vP':1.0/0.4, 'xQ':1.0/0.1, 'vQ':1.0/0.4,
                   'ψQ':1.0/(pi/4), 'ωQ':1.0/0.25, 'a':1.0/0.5, 'Δa':1.0/0.1, 'dq':1.0/0.4}
-        
         errors = {
             'xP': norm(self.data.qpos[7:10] - self.xPd[self.timestep]),
             'vP': norm(self.data.qvel[6:9] - self.vPd[self.timestep]),
@@ -624,27 +622,9 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                   / sum(exp(-np.linspace(0,1,self.history_len))),
             'dq': norm((self.data.qvel[0:3] - self.data.qvel[6:9]) / self.cable_length if not self.cable_length == 0 else 0)
         }
-        
-        """Simple summation: tvec_1, 2 (dq x), 5 (dq o)"""
-        # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
-        # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
-        # total_reward = sum(list(weighted_rewards.values()))
-        """Product xP only: tvec_3 (dq x), 4 (dq o) modify for exP"""
         rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
         weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
         total_reward = (weighted_rewards['xP'] + weighted_rewards['ψQ']) * (1 + weighted_rewards['ωQ'] + weighted_rewards['dq']) + weighted_rewards['a'] + weighted_rewards['Δa']
-        """Product x, v: tvec_6 (modify tvec_4 + vP, xQ, vQ)"""
-        # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
-        # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
-        # total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ']) * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq']) + weighted_rewards['Δa']
-        """Product x, v, Δa: tvec_7 (modify tvec_6 for more Δa penalty)"""
-        # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
-        # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
-        # total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ','Δa']) * (1 + weighted_rewards['ψQ'] + weighted_rewards['ωQ'] + weighted_rewards['dq'])
-        """Product x, v: tvec_8 (modify tvec_6 for ea)"""
-        # rewards = {k: np.exp(-scales[k]*errors[k]) for k in weights}
-        # weighted_rewards = {k: weights[k]*rewards[k] for k in weights}
-        # total_reward = sum(weighted_rewards[k] for k in ['xP','vP','xQ','vQ','a']) * (1 + sum(weighted_rewards[k] for k in ['ψQ','ωQ','dq','Δa']))
         return total_reward, rewards
 
     def _terminated(self):

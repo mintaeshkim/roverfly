@@ -466,7 +466,7 @@ class QuadrotorMiniEnv(MujocoEnv, utils.EzPickle):
         self.data.xfrc_applied[self.body_id][0:6] = self.disturbance_wrench
 
     def _ctbr2srt(self, thrust_body_rates):
-        zcmd = dual_tanh(thrust_body_rates[0])  # [N]
+        zcmd = dual_tanh_quadrotor(thrust_body_rates[0])  # [N]
         ω_d = tanh(thrust_body_rates[1:])  # [rad/s]
 
         e_ang_vel = ω_d - self.ω

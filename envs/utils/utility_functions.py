@@ -37,6 +37,11 @@ def time_derivative(f,qq,qqd,xx,xxd,t):
     return dfdt
 
 def dual_tanh(x):
+    tanh1 = np.tanh(3 * x + 2) / 2
+    tanh2 = np.tanh(3 * x - 2) / 2
+    return tanh1 + tanh2
+
+def dual_tanh_quadrotor(x):
     mg = 8.19135  # if mini: 2.7468
     max_thrust = 30.0  # if mini: 15.7837
     tanh1 = mg * (1 + np.tanh(3 * x + 2)) / 2
@@ -67,7 +72,7 @@ def dual_tanh_srt(x):
 if __name__ == "__main__":
 
     x_vals = np.linspace(-1, 1, 500)
-    y_vals = dual_tanh_srt(x_vals)
+    y_vals = dual_tanh_payload(x_vals)
 
     plt.plot(x_vals, y_vals)
     plt.xlabel("x")

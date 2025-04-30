@@ -4,3 +4,6 @@ WARNING: mju_openResource: unknown file '../assets/quadrotor_falcon.xml'
 Tue Apr 29 05:55:04 2025
 WARNING: Nan, Inf or huge value in QACC at DOF 9. The simulation is unstable. Time = 48.7000.
 
+Tue Apr 29 15:09:20 2025
+WARNING: Nan, Inf or huge value in QACC at DOF 9. The simulation is unstable. Time = 48.7000.
+

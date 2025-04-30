@@ -518,7 +518,7 @@ class QuadrotorEnv(MujocoEnv, utils.EzPickle):
         return f
 
     def _ctbr2srt(self, action):
-        zcmd = dual_tanh(action[0])
+        zcmd = dual_tanh_quadrotor(action[0])
         dφd = tanh(action[1])
         dθd = tanh(action[2])
         dψd = tanh(action[3])
