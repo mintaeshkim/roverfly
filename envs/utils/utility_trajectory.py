@@ -344,13 +344,13 @@ class CrazyTrajectoryPayload(Trajectory):
     def __init__(self, tf=30, ax=2, ay=2, az=1, f1=0.2, f2=0.2, f3=0.1):
         super().__init__(tf)
 
-        self.ax = np.random.uniform(ax/2, ax)
-        self.ay = np.random.uniform(ay/2, ay)
-        self.az = np.random.uniform(az/2, az)
+        self.ax = ax
+        self.ay = ay
+        self.az = az
         
-        self.f1 = np.random.uniform(f1/2, f1)
-        self.f2 = np.random.uniform(f2/2, f2)
-        self.f3 = np.random.uniform(f3/2, f3)
+        self.f1 = f1
+        self.f2 = f2
+        self.f3 = f3
 
         self.phix = np.random.choice([np.pi/2, 3*np.pi/2])
         self.phiy = np.random.choice([np.pi/2, 3*np.pi/2])

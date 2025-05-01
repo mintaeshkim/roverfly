@@ -23,7 +23,7 @@ from envs.utils.utility_functions import *
 from envs.utils.rotation_transformations import *
 from envs.utils.render_util import *
 from envs.utils.mj_utils import *
-from envs.utils.action_filter import ContinuousActionFilter
+from envs.utils.action_filter import ActionFilterButter
 import time
 import matplotlib.pyplot as plt
 
@@ -35,7 +35,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     
     def __init__(
         self,
-        max_timesteps:int = 3000,
+        max_timesteps:int = 4000,
         xml_file: str = "../assets/quadrotor_falcon_payload.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
@@ -49,7 +49,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.payload_body_id = self.model.body(name="payload").id
         self.env_randomizer = EnvRandomizer(model=self.model)
         self.frame_skip = frame_skip
-        self.control_scheme = "ctbr"  # ["srt", "tvec", "ctbr"]
+        self.control_scheme = "tvec"  # ["srt", "tvec", "ctbr"]
         np.random.seed(env_num)
         
         ##################################################
@@ -81,9 +81,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_disturbance    = False
         self.is_full_traj      = False
         self.is_rotor_dynamics = False
-        self.is_action_filter  = False
+        self.is_action_filter  = True
         self.is_ema_action     = False
-        self.is_residual       = True
         self.is_record_action  = True
         # endregion
         ##################################################
@@ -253,12 +252,12 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self._init_history_ff()
         self.info = self._get_reset_info()
         if self.is_action_filter:
-            self.action_filter = ContinuousActionFilter(
-                history_len=self.history_len,
-                a_dim=self.a_dim,
-                lipschitz_const = 10.0,
-                a_buffer=self.a_buffer,
-                dt=self.policy_dt
+            self.action_filter = ActionFilterButter(
+                lowcut=[0],
+                highcut=[5],
+                sampling_rate=self.policy_freq,
+                order=2,
+                num_joints=3,
             )
         obs = self._get_obs()
         return obs, self.info
@@ -276,12 +275,12 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
 
         self.traj = ut.CrazyTrajectoryPayload(
             tf=self.max_timesteps*self.policy_dt,
-            ax=choice([-1,1])*2.0,
-            ay=choice([-1,1])*2.0,
-            az=choice([-1,1])*1.0,
-            f1=choice([-1,1])*0.2,
-            f2=choice([-1,1])*0.2,
-            f3=choice([-1,1])*0.1
+            ax=uniform(low=-2, high=2),
+            ay=uniform(low=-2, high=2),
+            az=uniform(low=-1, high=1),
+            f1=uniform(low=-0.2, high=0.2),
+            f2=uniform(low=-0.2, high=0.2),
+            f3=uniform(low=-0.1, high=0.1)
         )
         # self.type = np.random.choice(["crazy_1", "crazy_2", "crazy_3", "crazy_4",
         #                               "swing_1", "swing_2", "swing_3", "swing_4",
@@ -396,7 +395,6 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.RQ = euler2rot(quat2euler_raw(self.data.qpos[3:7])
                             + clip(normal(loc=0, scale=pi/60, size=3), -pi/120, pi/120))
         self.xP = self.data.qpos[7:10] + clip(normal(loc=0, scale=0.01, size=3), -0.0025, 0.0025)
-
         self.vQ = self.data.qvel[0:3] + clip(normal(loc=0, scale=0.02, size=3), -0.005, 0.005)
         self.ωQ = self.data.qvel[3:6] + clip(normal(loc=0, scale=pi/30, size=3), -pi/60, pi/60)
         self.vP = self.data.qvel[6:9] + clip(normal(loc=0, scale=0.02, size=3), -0.005, 0.005)
@@ -406,7 +404,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
    
     def step(self, action, restore=False):
         # 1. Simulate for Single Time Step
-        self.raw_action = self.action_last + np.array([0.01, 0.1, 0.1, 0.1]) * action if self.is_residual else action
+        self.raw_action = action
         self.action = self.action_filter.filter(self.raw_action) if self.is_action_filter else self.raw_action
         if self.is_ema_action: self.action = 0.2 * self.action + 0.8 * self.action_last
         if self.is_delayed: self.action_queue.append([self.data.time, self.action])
@@ -518,17 +516,15 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         
         # Convert to euler angles
         euler_des = rot2euler(R_des)
-        euler_curr = quat2euler_raw(self.data.qpos[3:7])
-        omega_curr = self.data.qvel[3:6]
         
         # Attitude position control (P only)
-        e_att = euler_des - euler_curr
+        e_att = euler_des - rot2euler(self.RQ)
         
         # Compute desired angular rates (P from attitude)
         cmd_omega = self.kp_att * e_att
         
         # Rate control (PID)
-        e_rate = cmd_omega - omega_curr
+        e_rate = cmd_omega - self.ωQ
         self.rate_integral = clip(self.rate_integral + e_rate * self.sim_dt, -self.max_rate_integral, self.max_rate_integral)
         rate_deriv = (e_rate - np.array([self.edφP_prev, self.edθP_prev, self.edψP_prev])) / self.sim_dt
 
@@ -649,6 +645,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                   epi=self.num_episode,
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
+            if self.is_record_action: self.plot_action()
             return True
         if exP > self.pos_err_bound:
             self.num_episode += 1
@@ -658,6 +655,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                   pos_err=round(exP, 2),
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
+            if self.is_record_action: self.plot_action()
             return True
         elif evP > self.vel_err_bound:
             self.num_episode += 1
@@ -667,6 +665,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                   vel_err=round(evP, 2),
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
+            if self.is_record_action: self.plot_action()
             return True
         elif not(abs(attQ) < pi/2).all():
             self.num_episode += 1
@@ -676,6 +675,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                   att=round(attQ, 2),
                   time=round(self.time_in_sec, 2),
                   rew=round(self.total_reward, 1)))
+            if self.is_record_action: self.plot_action()
             return True
         elif self.timestep >= self.max_timesteps:
             """ TEST """
