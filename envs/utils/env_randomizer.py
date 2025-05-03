@@ -50,8 +50,8 @@ class EnvRandomizer(object):
             self.tendon_length_scale = 1.0  # [0.025, 1.0] m
 
             # Rotor dynamics
-            self._default_tau_up = 0.2164 / 5
-            self._default_tau_down = 0.1644 / 5
+            self._default_tau_up = 0.2164
+            self._default_tau_down = 0.1644
 
     def randomize_env(self, model):
         model = self.reset_env(model=model)
@@ -70,12 +70,13 @@ class EnvRandomizer(object):
         if self.has_payload:
             payload_mass = self._default_body_mass[self.payload_body_id] * uniform(low=0, high=self.payload_mass_scale)
             tendon_length = uniform(0, self.tendon_length_scale)
+            # tendon_length = 0
             model.body_ipos[self.payload_body_id] = self._default_hook_core_site_pos + np.array([0, 0, -tendon_length])
             model.body_mass[self.payload_body_id] = payload_mass
             model.tendon_range[0][1] = tendon_length
 
-        tau_up = self._default_tau_up * uniform(0, 1)
-        tau_down = self._default_tau_down * uniform(0, 1)
+        tau_up = self._default_tau_up * uniform(0.2, 0.5)
+        tau_down = self._default_tau_down * uniform(0.2, 0.5)
 
         # print("body_ipos: \n", model.body_ipos)
         # print("body_iquat: \n", model.body_iquat)

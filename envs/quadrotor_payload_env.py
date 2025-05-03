@@ -80,7 +80,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_env_randomized = True
         self.is_disturbance    = False
         self.is_full_traj      = False
-        self.is_rotor_dynamics = False
+        self.is_rotor_dynamics = True
         self.is_action_filter  = True
         self.is_ema_action     = False
         self.is_record_action  = True
@@ -245,7 +245,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     def reset(self, seed=None, randomize=None):
         # super().reset(seed=self.env_num)        
         if self.is_env_randomized:
-            self.model, self.mP, self.cable_length, _, _ = self.env_randomizer.randomize_env(self.model)
+            self.model, self.mP, self.cable_length, self.tau_up, self.tau_down = self.env_randomizer.randomize_env(self.model)
         self._reset_env()
         self._reset_model()
         self._reset_error()
@@ -282,6 +282,15 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             f2=uniform(low=-0.2, high=0.2),
             f3=uniform(low=-0.1, high=0.1)
         )
+        # self.traj = ut.CrazyTrajectoryPayload(
+        #     tf=self.max_timesteps*self.policy_dt,
+        #     ax=0,
+        #     ay=0,
+        #     az=0,
+        #     f1=0,
+        #     f2=0,
+        #     f3=0
+        # )
         # self.type = np.random.choice(["crazy_1", "crazy_2", "crazy_3", "crazy_4",
         #                               "swing_1", "swing_2", "swing_3", "swing_4",
         #                               "circle_1", "circle_2", "circle_3", "circle_4",
