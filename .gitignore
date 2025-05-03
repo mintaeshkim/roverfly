@@ -4,3 +4,4 @@ train/logs/
 **/__pycache__/
 **/.DS_Store
 **/.MUJOCO_LOG.TXT
+quadrotor_payload/
