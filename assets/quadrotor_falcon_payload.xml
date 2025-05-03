@@ -20,7 +20,7 @@
         
         <body name="quadrotor" pos="0 0 1">
             <freejoint/>
-            <inertial pos="0 0 0" mass="0.835" diaginertia="0.0049 0.0053 0.0098" />
+            <inertial pos="0 0 0" mass="0.835" diaginertia="0.00401 0.00358 0.00636" />
             <geom class="collision" type="box" pos="0 0 0" quat="1 0 0 0" size="0.08 0.05 0.025" rgba="0 0.15 0.47 1" />
             <site name="body_frame" pos="0 0 0" quat="1 0 0 0"/>
 

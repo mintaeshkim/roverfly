@@ -80,10 +80,10 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_env_randomized = True
         self.is_disturbance    = False
         self.is_full_traj      = False
-        self.is_rotor_dynamics = True
+        self.is_rotor_dynamics = False
         self.is_action_filter  = True
         self.is_ema_action     = False
-        self.is_record_action  = True
+        self.is_record_action  = False
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -149,9 +149,9 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.mQ = 0.835
         self.mP = 0.1
         self.g = 9.81
-        self.JQ = np.array([[0.49, 0.00055, 0.002],
-                            [0.00055, 0.53, 0.00054],
-                            [0.002, 0.00054, 0.98]]) * 1e-2
+        self.JQ = np.array([[0.401, 0.0004, 0.0015],
+                            [0.0004, 0.358, 0.0004],
+                            [0.0015, 0.0004, 0.636]]) * 1e-2
         self.l = 0.1524
         self.d = self.l / sqrt(2)
         self.κ = 0.025
