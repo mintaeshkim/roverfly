@@ -83,7 +83,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_rotor_dynamics = True
         self.is_action_filter  = True
         self.is_ema_action     = False
-        self.is_record_action  = False
+        self.is_record_action  = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -254,7 +254,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         if self.is_action_filter:
             self.action_filter = ActionFilterButter(
                 lowcut=[0],
-                highcut=[5],
+                highcut=[10],
                 sampling_rate=self.policy_freq,
                 order=2,
                 num_joints=3,

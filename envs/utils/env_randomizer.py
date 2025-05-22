@@ -75,8 +75,8 @@ class EnvRandomizer(object):
             model.body_mass[self.payload_body_id] = payload_mass
             model.tendon_range[0][1] = tendon_length
 
-        tau_up = self._default_tau_up * uniform(0.15, 0.25)
-        tau_down = self._default_tau_down * uniform(0.15, 0.25)
+        tau_up = self._default_tau_up * uniform(0, 0.25)
+        tau_down = self._default_tau_down * uniform(0, 0.25)
 
         # print("body_ipos: \n", model.body_ipos)
         # print("body_iquat: \n", model.body_iquat)
