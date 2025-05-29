@@ -25,7 +25,7 @@ class EnvRandomizer(object):
         self._default_actuator_gear = copy(self.model.actuator_gear)  # Default actuator properties
         
         # Noise scales
-        self.ipos_noise_scale = 0 # 0.025  # m
+        self.ipos_noise_scale = 0.025  # m
         self.iquat_noise_scale = 5  # deg
         self.mass_noise_scale = 0.1
         self.inertia_noise_scale = 0.1
