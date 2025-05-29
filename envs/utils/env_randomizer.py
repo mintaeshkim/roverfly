@@ -26,10 +26,10 @@ class EnvRandomizer(object):
         
         # Noise scales
         self.ipos_noise_scale = 0 # 0.025  # m
-        self.iquat_noise_scale = 0# 5  # deg
-        self.mass_noise_scale = 0# 0.1
-        self.inertia_noise_scale = 0# 0.1
-        self.actuator_gear_noise_scale = 0# 0.1
+        self.iquat_noise_scale = 5  # deg
+        self.mass_noise_scale = 0.1
+        self.inertia_noise_scale = 0.1
+        self.actuator_gear_noise_scale = 0.1
 
         # Payload and tendon
         if self.has_payload:
