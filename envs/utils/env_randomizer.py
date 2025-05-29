@@ -25,11 +25,11 @@ class EnvRandomizer(object):
         self._default_actuator_gear = copy(self.model.actuator_gear)  # Default actuator properties
         
         # Noise scales
-        self.ipos_noise_scale = 0.025  # m
-        self.iquat_noise_scale = 5  # deg
-        self.mass_noise_scale = 0.1
-        self.inertia_noise_scale = 0.1
-        self.actuator_gear_noise_scale = 0.1
+        self.ipos_noise_scale = 0 # 0.025  # m
+        self.iquat_noise_scale = 0# 5  # deg
+        self.mass_noise_scale = 0# 0.1
+        self.inertia_noise_scale = 0# 0.1
+        self.actuator_gear_noise_scale = 0# 0.1
 
         # Payload and tendon
         if self.has_payload:
@@ -69,14 +69,14 @@ class EnvRandomizer(object):
         
         if self.has_payload:
             payload_mass = self._default_body_mass[self.payload_body_id] * uniform(low=0, high=self.payload_mass_scale)
-            tendon_length = choice([0, 0.5, 1.0])
-            # tendon_length = 0
+            tendon_length = uniform(low=0, high=1)
+            tendon_length = 0
             model.body_ipos[self.payload_body_id] = self._default_hook_core_site_pos + np.array([0, 0, -tendon_length])
             model.body_mass[self.payload_body_id] = payload_mass
             model.tendon_range[0][1] = tendon_length
 
-        tau_up = self._default_tau_up * uniform(0, 0.25)
-        tau_down = self._default_tau_down * uniform(0, 0.25)
+        tau_up = self._default_tau_up * uniform(0.05, 0.2)
+        tau_down = self._default_tau_down * uniform(0.05, 0.2)
 
         # print("body_ipos: \n", model.body_ipos)
         # print("body_iquat: \n", model.body_iquat)

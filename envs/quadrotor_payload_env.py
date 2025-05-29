@@ -83,7 +83,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_rotor_dynamics = True
         self.is_action_filter  = True
         self.is_ema_action     = False
-        self.is_record_action  = False
+        self.is_record_action  = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -246,7 +246,6 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         # super().reset(seed=self.env_num)        
         if self.is_env_randomized:
             self.model, self.mP, self.cable_length, self.tau_up, self.tau_down = self.env_randomizer.randomize_env(self.model)
-        self.is_disturbance = (self.cable_length == 0)
         self._reset_env()
         self._reset_model()
         self._reset_error()
@@ -255,7 +254,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         if self.is_action_filter:
             self.action_filter = ActionFilterButter(
                 lowcut=[0],
-                highcut=[5],
+                highcut=[10],
                 sampling_rate=self.policy_freq,
                 order=2,
                 num_joints=3,
