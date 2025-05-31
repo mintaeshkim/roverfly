@@ -35,7 +35,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
     
     def __init__(
         self,
-        max_timesteps:int = 4000,
+        max_timesteps:int = 3000,
         xml_file: str = "../assets/quadrotor_falcon_payload.xml",
         frame_skip: int = 1,
         default_camera_config: Dict[str, Union[float, int]] = DEFAULT_CAMERA_CONFIG,
@@ -254,7 +254,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         if self.is_action_filter:
             self.action_filter = ActionFilterButter(
                 lowcut=[0],
-                highcut=[10],
+                highcut=[5],
                 sampling_rate=self.policy_freq,
                 order=2,
                 num_joints=3,
