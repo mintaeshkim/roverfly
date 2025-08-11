@@ -83,7 +83,8 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.is_rotor_dynamics = True
         self.is_action_filter  = True
         self.is_ema_action     = False
-        self.is_record_action  = False
+        self.is_record_action  = True
+        self.is_record_xP      = True
         # endregion
         ##################################################
         ################## OBSERVATION ###################
@@ -241,6 +242,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.d_buffer.extend([d_curr] * self.history_len)
         self.a_buffer.extend([a_curr] * self.history_len)
         if self.is_record_action: self.action_record = zeros((self.max_timesteps, self.a_dim))
+        if self.is_record_xP: self.xP_record = zeros((self.max_timesteps, 3))
 
     def reset(self, seed=None, randomize=None):
         # super().reset(seed=self.env_num)        
@@ -605,6 +607,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         self.a_buffer.append(self.raw_action)
         self.action_last = self.action
         if self.is_record_action and self.timestep < self.max_timesteps: self.action_record[self.timestep] = self.action
+        if self.is_record_xP and self.timestep < self.max_timesteps: self.xP_record[self.timestep] = self.data.qpos[7:10]
         # Present
         self.time_in_sec = round(self.time_in_sec + self.policy_dt, 2)
         self.timestep += 1
@@ -698,6 +701,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
                   pos_err=round(exP, 2),
                   rew=round(self.total_reward, 1)))
             if self.is_record_action: self.plot_action()
+            if self.is_record_xP: self.plot_xP()
             return True
         else:
             return False
@@ -741,6 +745,33 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             axs[3].set_ylim([-1, 1])
             axs[3].legend()
 
+        plt.tight_layout()
+        plt.show()
+
+    def plot_xP(self):
+        timesteps = np.arange(self.max_timesteps) * self.policy_dt
+
+        # Allocate arrays
+        actual_pos = np.zeros((self.max_timesteps, 3))
+        desired_pos = np.zeros((self.max_timesteps, 3))
+
+        # Collect from simulation history
+        for t in range(self.max_timesteps):
+            desired_pos[t] = self.xPd[t]
+            actual_pos[t] = self.xP_record[t]
+
+        fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+        axes_labels = ['x', 'y', 'z']
+
+        for i in range(3):
+            axs[i].plot(timesteps, desired_pos[:, i], 'r--', label='Desired')
+            axs[i].plot(timesteps, actual_pos[:, i], 'b-', label='Actual')
+            axs[i].set_ylabel(f'Pos {axes_labels[i]} [m]')
+            axs[i].grid(True)
+            axs[i].legend()
+
+        axs[-1].set_xlabel('Time [s]')
+        plt.suptitle('Payload Desired vs Actual Position')
         plt.tight_layout()
         plt.show()
 
