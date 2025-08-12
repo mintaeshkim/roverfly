@@ -284,15 +284,15 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             f2=uniform(low=-0.2, high=0.2),
             f3=uniform(low=-0.1, high=0.1)
         )
-        # self.traj = ut.CrazyTrajectoryPayload(
-        #     tf=self.max_timesteps*self.policy_dt,
-        #     ax=0,
-        #     ay=0,
-        #     az=0,
-        #     f1=0,
-        #     f2=0,
-        #     f3=0
-        # )
+        self.traj = ut.CrazyTrajectoryPayload(
+            tf=self.max_timesteps*self.policy_dt,
+            ax=0,
+            ay=0,
+            az=0,
+            f1=0,
+            f2=0,
+            f3=0
+        )
         # self.type = np.random.choice(["crazy_1", "crazy_2", "crazy_3", "crazy_4",
         #                               "swing_1", "swing_2", "swing_3", "swing_4",
         #                               "circle_1", "circle_2", "circle_3", "circle_4",
@@ -331,6 +331,7 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
             self.xQd[i] = self.xPd[i] - self.qd[i] * self.cable_length
             self.vQd[i] = self.vPd[i] - self.dqd[i] * self.cable_length
         self.x_offset = self.pos_bound * np.array([uniform(-1, 1), uniform(-1, 1), 0 if self.is_full_traj else 2 * uniform(0.5, 1)])
+        self.x_offset = np.array([0, 0, 0.5])
         self.xPd += self.x_offset
         self.xQd += self.x_offset
         self.goal_pos = self.xPd[-1]
@@ -749,29 +750,47 @@ class QuadrotorPayloadEnv(MujocoEnv, utils.EzPickle):
         plt.show()
 
     def plot_xP(self):
-        timesteps = np.arange(self.max_timesteps) * self.policy_dt
+        l = self.cable_length
+        mP = self.mP 
 
-        # Allocate arrays
-        actual_pos = np.zeros((self.max_timesteps, 3))
-        desired_pos = np.zeros((self.max_timesteps, 3))
+        # Time axis
+        T = self.max_timesteps
+        timesteps = np.arange(T) * self.policy_dt
 
-        # Collect from simulation history
-        for t in range(self.max_timesteps):
-            desired_pos[t] = self.xPd[t]
-            actual_pos[t] = self.xP_record[t]
+        # Safety: ensure records exist and length match
+        if not hasattr(self, "xP_record") or self.xP_record is None:
+            raise RuntimeError("xP_record not found. Make sure to record payload positions during step().")
 
+        T_rec = min(T, len(self.xP_record), len(self.xPd))
+        timesteps = timesteps[:T_rec]
+
+        # Collect arrays
+        desired_pos = np.asarray(self.xPd[:T_rec])
+        actual_pos  = np.asarray(self.xP_record[:T_rec])
+
+        # Compute errors / RMSE
+        err = actual_pos - desired_pos  # [T, 3]
+        rmse_xyz = np.sqrt(np.mean(err**2, axis=0))  # per-axis RMSE
+        rmse_total = np.sqrt(np.mean(np.sum(err**2, axis=1)))  # norm RMSE over time
+
+        # Plot
         fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-        axes_labels = ['x', 'y', 'z']
+        labels = ['x', 'y', 'z']
 
         for i in range(3):
-            axs[i].plot(timesteps, desired_pos[:, i], 'r--', label='Desired')
-            axs[i].plot(timesteps, actual_pos[:, i], 'b-', label='Actual')
-            axs[i].set_ylabel(f'Pos {axes_labels[i]} [m]')
+            axs[i].plot(timesteps, desired_pos[:, i], linestyle='--', label='Desired', linewidth=2.5)
+            axs[i].plot(timesteps, actual_pos[:, i], linestyle='-',  label='Actual', linewidth=2.5)
+            axs[i].set_ylabel(f'{labels[i]} [m]')
             axs[i].grid(True)
-            axs[i].legend()
+            axs[i].legend(loc='best')
 
         axs[-1].set_xlabel('Time [s]')
-        plt.suptitle('Payload Desired vs Actual Position')
+
+        title = (f'Payload Desired vs Actual Position  '
+                f'(l={l:.1f} m, mP={mP:.1f} kg)\n'
+                f'RMSE [m]: x={rmse_xyz[0]:.3f}, y={rmse_xyz[1]:.3f}, z={rmse_xyz[2]:.3f}, '
+                f'total={rmse_total:.3f}')
+        plt.suptitle(title)
         plt.tight_layout()
         plt.show()
 
