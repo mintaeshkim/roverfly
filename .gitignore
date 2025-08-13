@@ -5,3 +5,4 @@ train/logs/
 **/.DS_Store
 **/.MUJOCO_LOG.TXT
 quadrotor_payload/
+plotting/
