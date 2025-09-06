@@ -1,4 +1,4 @@
-# Quadrotor Trajectory Tracking
+# RoVerFly: Robust and Versatile Learning-based Control of Quadrotor Across Payload Configurations
 
 This repository provides a reinforcement learning (RL) framework for quadrotor trajectory tracking. The framework is built using MuJoCo and Stable Baselines3. It supports curriculum learning, domain randomization, and sim-to-real gap reduction techniques. It is designed for training policies that can generalize to real-world applications.
 
