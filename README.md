@@ -74,5 +74,13 @@ pip install -r requirements.txt
 ## **Citing**
 
 ```
-
+@misc{kim2025roverfly,
+      title={RoVerFly: Robust and Versatile Learning-based Control of Quadrotor Across Payload Configurations}, 
+      author={Mintae Kim and Jiaze Cai and Koushil Sreenath},
+      year={2025},
+      eprint={2509.11149},
+      archivePrefix={arXiv},
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2509.11149}, 
+}
 ```
