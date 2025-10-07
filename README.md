@@ -1,4 +1,4 @@
-# RoVerFly: Robust and Versatile Learning-based Control of Quadrotor Across Payload Configurations
+# RoVerFly: Robust and Versatile Implicit Hybrid Control of Quadrotor-Payload Systems
 
 This repository provides a reinforcement learning (RL) framework for quadrotor trajectory tracking. The framework is built using MuJoCo and Stable Baselines3. It supports curriculum learning, domain randomization, and sim-to-real gap reduction techniques. It is designed for training policies that can generalize to real-world applications.
 
@@ -74,10 +74,13 @@ pip install -r requirements.txt
 ## **Citing**
 
 ```
-@article{kim2025roverfly,
-  title={RoVerFly: Robust and Versatile Learning-based Control of Quadrotor Across Payload Configurations},
-  author={Kim, Mintae and Cai, Jiaze and Sreenath, Koushil},
-  journal={arXiv preprint arXiv:2509.11149},
-  year={2025}
+@misc{kim2025roverflyrobustversatileimplicit,
+      title={RoVerFly: Robust and Versatile Implicit Hybrid Control of Quadrotor-Payload Systems}, 
+      author={Mintae Kim and Jiaze Cai and Koushil Sreenath},
+      year={2025},
+      eprint={2509.11149},
+      archivePrefix={arXiv},
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2509.11149}, 
 }
 ```
