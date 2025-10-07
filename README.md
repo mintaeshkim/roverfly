@@ -74,13 +74,10 @@ pip install -r requirements.txt
 ## **Citing**
 
 ```
-@misc{kim2025roverflyrobustversatileimplicit,
-      title={RoVerFly: Robust and Versatile Implicit Hybrid Control of Quadrotor-Payload Systems}, 
-      author={Mintae Kim and Jiaze Cai and Koushil Sreenath},
-      year={2025},
-      eprint={2509.11149},
-      archivePrefix={arXiv},
-      primaryClass={cs.RO},
-      url={https://arxiv.org/abs/2509.11149}, 
+@article{kim2025roverfly,
+  title={RoVerFly: Robust and Versatile Implicit Hybrid Control of Quadrotor-Payload Systems},
+  author={Kim, Mintae and Cai, Jiaze and Sreenath, Koushil},
+  journal={arXiv preprint arXiv:2509.11149v2},
+  year={2025}
 }
 ```
