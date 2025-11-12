@@ -59,7 +59,7 @@ pip install -r requirements.txt
 
 ### 2. Run Training
 ```bash
-python train.py --env quadrotor_payload --algo ppo --steps 2e7
+python train/run_quadrotor.py --num_envs 32 --env payload --device cpu --id exp_1
 ```
 
 ---
