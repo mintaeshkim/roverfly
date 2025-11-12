@@ -12,6 +12,10 @@ This repository contains the full simulation and training framework implemented 
 
 ---
 
+![Quadrotor-Payload Trajectory Tracking](./assets/payload_full_trajectory.gif)
+
+---
+
 ## 🚀 Key Features
 
 ### • Unified Learning-Based Controller
