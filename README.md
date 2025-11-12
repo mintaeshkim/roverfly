@@ -12,7 +12,9 @@ This repository contains the full simulation and training framework implemented 
 
 ---
 
-![Quadrotor-Payload Trajectory Tracking](./payload_full_trajectory.gif)
+<p align="center">
+  <img src="./payload_full_trajectory.gif" alt="Trajectory Tracking Demo" width="600"/>
+</p>
 
 ---
 
