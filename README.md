@@ -7,7 +7,6 @@ This repository contains the full simulation and training framework implemented 
 
 > **Mintae Kim, Jiaze Cai, and Koushil Sreenath**  
 > *RoVerFly: Robust and Versatile Implicit Hybrid Control of Quadrotor–Payload Systems*  
-> Submitted to **IEEE American Control Conference (ACC) 2026**
 > [[arXiv preprint]](https://arxiv.org/abs/2509.11149)
 
 <p align="center">
