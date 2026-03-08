@@ -1,78 +1,88 @@
-# Quadrotor Trajectory Tracking
+# 🛸 RoVerFly: Robust and Versatile Implicit Hybrid Control of Quadrotor–Payload Systems
 
-This repository provides a reinforcement learning (RL) framework for quadrotor trajectory tracking. The framework is built using MuJoCo and Stable Baselines3. It supports curriculum learning, domain randomization, and sim-to-real gap reduction techniques. It is designed for training policies that can generalize to real-world applications.
+**RoVerFly** is a unified **learning-based control framework** for robust and adaptive quadrotor–payload trajectory tracking.  
+A single reinforcement learning (RL) policy functions as an *implicit hybrid controller* that learns to handle **taut–slack transitions, payload mass/length variation**, and external disturbances — all without explicit mode detection or controller switching.
 
-## Features
+This repository contains the full simulation and training framework implemented in **MuJoCo** and **Stable Baselines3**, used for the experiments in our paper:
 
-### 1. Quadrotor Trajectory Tracking
-- The environment is designed for training reinforcement learning policies to track reference trajectories with a quadrotor.
-- Supports different trajectory types, including setpoint stabilization and continuous curve tracking.
-- Includes a reward function that encourages accurate position and velocity tracking.
+> **Mintae Kim, Jiaze Cai, and Koushil Sreenath**  
+> *RoVerFly: Robust and Versatile Implicit Hybrid Control of Quadrotor–Payload Systems*  
+> [[arXiv preprint]](https://arxiv.org/abs/2509.11149)
 
-### 2. Curriculum Learning
-- The environment dynamically adjusts trajectory difficulty based on agent performance.
-- Starts with simple setpoint stabilization and gradually progresses to complex curved trajectories.
-- The difficulty is updated using historical performance metrics.
+<p align="center">
+  <img src="./payload_full_trajectory.gif" alt="Trajectory Tracking Demo" width="300"/>
+</p>
 
-### 3. Sim-to-Real Gap & Domain Randomization
-- Implements **domain randomization** to improve policy generalization:
-  - Random perturbations in quadrotor mass and inertia.
-  - Random initial position and velocity offsets.
-  - Actuator delay modeling.
-- Reduces the **sim-to-real gap** by incorporating realistic noise and delays.
+---
 
-### 4. Observation Space
-- Includes **state history** (past observations) for improved temporal understanding.
-- Uses a **high-dimensional observation vector (o_dim = 198)** consisting of:
-  - Current quadrotor state (position, velocity, orientation, angular velocity)
-  - Past observations from a rolling buffer
-  - Future reference trajectory points for predictive tracking
+## 🚀 Key Features
 
-### 5. Action Space
-- Control inputs are represented as **Collective Thrust and Body Rates (CTBR)**:
-  - **Action space:** `[Thrust, Roll Rate, Pitch Rate, Yaw Rate]` in normalized range.
-  - Supports bounded and unbounded action modes.
-- Actions are processed through a **low-level PID controller** to generate rotor thrust commands.
+### • Unified Learning-Based Controller
+- A **single policy** trained with **task and domain randomization** generalizes across payload configurations:
+  - No payload → Flexible cable-suspended payload  
+  - Varying payload mass and cable length  
+- Learns an implicit mode representation for **taut–slack hybrid dynamics**.
 
-### 6. Low-Level Controller
-- The environment includes a **PID-based low-level controller** for attitude stabilization.
-- Converts **body rate commands** into **individual rotor thrusts** using the quadrotor's control allocation matrix.
-- Includes **actuator dynamics** (rise and fall time constants) for realistic motor response.
+### • End-to-End PPO Training
+- Built on **Stable Baselines3 (PPO)** with a modular MuJoCo environment.
+- Observation includes **present**, **past (I/O history)**, and **future (feedforward preview)** terms for temporal awareness.
+- CTBR (Collective Thrust and Body Rate) action parameterization for smooth and physically interpretable control.
 
-## Environment Structure
+### • Realism-Oriented Simulation
+- High-fidelity MuJoCo environment with **finite-stiffness cable**, actuator lag, and input delay.
+- Domain randomization over dynamics, delays, and sensor noise.
+- Robust to disturbances: ±0.5 N force, ±0.005 N·m torque impulses, and randomized initial conditions.
 
-### **State Representation**
-The environment maintains a structured observation space with history buffers and predictive information:
-```
-Observation = [
-    Current state (position, velocity, orientation, angular velocity),
-    Feedback (position, velocity),
-    Prior action,
-    I/O history (position, velocity, actions),
-    Future reference trajectory points
-]
-```
+### • Reward and Curriculum
+- Exponential tracking-based reward encouraging precise and smooth motion.
+- Optional curriculum progression from hover → trajectory tracking → aggressive maneuvers.
 
-### **Action Representation**
-```
-Action = [Thrust, Roll Rate, Pitch Rate, Yaw Rate]
-```
-- If `is_action_bound = True`: Thrust values are constrained between `[0.2, 0.8]`
-- If `is_action_bound = False`: Actions are in `[-1, 1]` normalized range
+---
 
-## Installation & Setup
-### **Requirements**
-- MuJoCo
-- NumPy
-- Gymnasium
+## 🧠 Environment Overview
 
-### **Setup Instructions**
-```sh
+| Component | Description |
+|------------|--------------|
+| **State** | Quadrotor + payload positions, velocities, attitude, angular velocity, cable direction, and payload parameters $(m_P, l)$. |
+| **Action (CTBR)** | `[Thrust, Roll Rate, Pitch Rate, Yaw Rate]`, mapped to individual motor thrusts via a low-level PID controller. |
+| **Observation** | Concatenation of current state, tracking errors, previous action, short I/O history (H=5), and reference preview (F=10). |
+| **Dynamics** | Hybrid taut/slack modes with smooth switching via continuous finite-stiffness cable model. |
+| **Training** | PPO with clipped Gaussian noise, 10–30 ms input delay, and randomized physical parameters. |
+
+---
+
+## 🧩 Installation & Usage
+
+### 1. Environment Setup
+```bash
+git clone https://github.com/mintaeshkim/roverfly.git
+cd roverfly
 pip install -r requirements.txt
 ```
 
-## **Citing**
-
+### 2. Run Training
+```bash
+python train/run_quadrotor.py --num_envs 32 --env payload --device cpu --id exp_1
 ```
 
+---
+
+## 📊 Results Summary
+- Stable trajectory tracking across payload configurations
+- Rapid recovery from external impulses and noise
+- Zero-shot generalization to unseen reference trajectories
+- Ablations confirm the critical role of I/O history and feedforward preview
+
+---
+
+## 🧾 Citation
+
+If you use this framework, please cite:
+```
+@article{kim2025roverfly,
+  title={RoVerFly: Robust and Versatile Implicit Hybrid Control of Quadrotor-Payload Systems},
+  author={Kim, Mintae and Cai, Jiaze and Sreenath, Koushil},
+  journal={arXiv preprint arXiv:2509.11149},
+  year={2025}
+}
 ```
