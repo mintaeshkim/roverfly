@@ -70,14 +70,14 @@ class EnvRandomizer(object):
         if self.has_payload:
             payload_mass = self._default_body_mass[self.payload_body_id] * uniform(low=0, high=self.payload_mass_scale)
             tendon_length = uniform(low=0, high=1)
-            # payload_mass = 0.0
-            # tendon_length = 0.0
+            payload_mass = 0.1
+            tendon_length = 0.5
             model.body_ipos[self.payload_body_id] = self._default_hook_core_site_pos + np.array([0, 0, -tendon_length])
             model.body_mass[self.payload_body_id] = payload_mass
             model.tendon_range[0][1] = tendon_length
 
-        tau_up = self._default_tau_up * uniform(0.05, 0.2)
-        tau_down = self._default_tau_down * uniform(0.05, 0.2)
+        tau_up = self._default_tau_up * 0.05  # * uniform(0.05, 0.2)
+        tau_down = self._default_tau_down * 0.05  # * uniform(0.05, 0.2)
 
         # print("body_ipos: \n", model.body_ipos)
         # print("body_iquat: \n", model.body_iquat)
