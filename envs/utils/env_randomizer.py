@@ -108,6 +108,7 @@ class EnvRandomizer(object):
 
         return model
 
+
 def random_deviation_quaternion(original_quaternion, max_angle_degrees):
     random_axis = randn(3)
     random_axis /= norm(random_axis)
