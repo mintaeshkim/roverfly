@@ -86,3 +86,22 @@ If you use this framework, please cite:
   year={2025}
 }
 ```
+Companion papers:
+```
+@inproceedings{cai2025learning,
+  title={Learning-based trajectory tracking for bird-inspired flapping-wing robots},
+  author={Cai, Jiaze and Sangli, Vishnu and Kim, Mintae and Sreenath, Koushil},
+  booktitle={2025 American Control Conference (ACC)},
+  pages={430--437},
+  year={2025},
+  organization={IEEE}
+}
+```
+```
+@article{kim2026finite,
+  title={Finite Memory Belief Approximation for Optimal Control in Partially Observable Markov Decision Processes},
+  author={Kim, Mintae},
+  journal={arXiv preprint arXiv:2601.03132},
+  year={2026}
+}
+```
