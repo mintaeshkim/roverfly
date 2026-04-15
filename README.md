@@ -10,8 +10,8 @@ This repository contains the full simulation and training framework implemented 
 > [[arXiv preprint]](https://arxiv.org/abs/2509.11149)
 
 <p align="center">
-  <img src="./payload_full_trajectory.gif" alt="Trajectory Tracking Demo" width="500"/>
-  <img src="./roverfly_pipeline.png" alt="Pipeline" width="300"/>
+  <img src="./payload_full_trajectory.gif" alt="Trajectory Tracking Demo" width="300"/>
+  <img src="./roverfly_pipeline.png" alt="Pipeline" width="500"/>
 </p>
 
 ---
