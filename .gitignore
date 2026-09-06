@@ -15,6 +15,7 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+.github/
 
 # Training and local analysis artifacts
 runs/
