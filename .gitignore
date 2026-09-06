@@ -1,8 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Environments and editors
+.venv/
+.env
+.DS_Store
+.idea/
+.vscode/
+
+# Training and local analysis artifacts
+runs/
 train/data/
-train/saved_models/
 train/logs/
-**/__pycache__/
-**/.DS_Store
-**/.MUJOCO_LOG.TXT
-quadrotor_payload/
+train/saved_models/
+videos/
 plotting/
+quadrotor_payload/
+MUJOCO_LOG.TXT
