@@ -8,8 +8,8 @@ actuator delay, and external disturbances without explicit mode switching.
 > Control of Quadrotor–Payload Systems*. [arXiv:2509.11149](https://arxiv.org/abs/2509.11149)
 
 <p align="center">
-  <img src="docs/assets/payload_full_trajectory.gif" alt="Trajectory tracking" width="300">
-  <img src="docs/assets/roverfly_pipeline.png" alt="RoVerFly pipeline" width="456">
+  <img src="assets/payload_full_trajectory.gif" alt="Trajectory tracking" width="300">
+  <img src="assets/roverfly_pipeline.png" alt="RoVerFly pipeline" width="456">
 </p>
 
 ## Install
@@ -54,7 +54,7 @@ MNN export additionally requires `MNNConvert` on `PATH`. ONNX export requires th
 ## Layout
 
 ```text
-src/roverfly/
+roverfly/
 ├── assets/        MuJoCo models and textures
 ├── control/       action filters
 ├── envs/          Gymnasium environments
